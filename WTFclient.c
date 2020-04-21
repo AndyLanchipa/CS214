@@ -18,18 +18,7 @@
 int main(int argc, char * argv[]){
 
 
-
-
-
-
-
-
-
-
-
-
-
-
+int something =0;
 
 //configure: get the Port number and IP address and connect the client to the Server ./WTF 
 	 char *address;
