@@ -75,13 +75,24 @@ int tryConnect(char * IP, char * PORT){
 	}
 
 	
-
-	int connection_stat =connect(net_socket, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr));	
+		
 	
+	int connection_stat =connect(net_socket, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr));	
+		
+
 	//check if connection was successful
-     if(connection_stat ==-1){
+     if(connection_stat < 0){
          printf("there is an error to connect the socket to the server");
      }
+	 char *hello = "Hello from client"; 
+printf("hello\n");
+	 send(net_socket , hello , strlen(hello) , 0 ); 
+	 printf("hello\n");
+    printf("Hello message sent\n"); 
+	char buffer[1024] = {0};
+	int valread=0;
+    valread = read( net_socket, buffer, 1024); 
+    printf("%s\n",buffer ); 
  
 	return 1;
 }
@@ -164,11 +175,6 @@ for(int i=0; i<argc-1;i++){
 }
 
  GetIandP();
-
-
-
-
-    
 
 	return 0;
 }
