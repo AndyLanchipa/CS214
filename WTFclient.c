@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -7,10 +8,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h> 
 #include <fcntl.h>
 
 
-//////client connect and Configure/////////
+///////////////////////////////client connect and Configure////////////////////////////////////////////////////////////////////////////////
 
 /*
 ./WTF configure <IP/hostname> <port>
@@ -37,7 +39,7 @@ int configure(char * IPHostname, char * PORT){
 
 }
 
-/////////oonnect client to server/////////////
+/////////connect client to server/////////////
 
 
 int tryConnect(char * IP, char * PORT){
@@ -75,26 +77,40 @@ int tryConnect(char * IP, char * PORT){
 	}
 
 	
-		
-	
-	int connection_stat =connect(net_socket, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr));	
+	int connection_stat; //this will see if the connection is successful
+
+	while(1){	
+	printf("connecting");
+	connection_stat =connect(net_socket, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr));	
+	//the connection went through and we will stop trying to constantly connect
+	if(connection_stat == 0){
+		break;
+	}
+	sleep(3);
+	}
 		
 
 	//check if connection was successful
-     if(connection_stat < 0){
+
+	//need to perform while loop so it attempts to connect 3 times
+     if(connection_stat <0){
          printf("there is an error to connect the socket to the server");
      }
-	 char *hello = "Hello from client"; 
-printf("hello\n");
-	 send(net_socket , hello , strlen(hello) , 0 ); 
-	 printf("hello\n");
-    printf("Hello message sent\n"); 
-	char buffer[1024] = {0};
-	int valread=0;
-    valread = read( net_socket, buffer, 1024); 
-    printf("%s\n",buffer ); 
+
+
+
+
+// 	 char *hello = "Hello from client"; 
+// printf("hello\n");
+// 	 send(net_socket , hello , strlen(hello) , 0 ); 
+// 	 printf("hello\n");
+//     printf("Hello message sent\n"); 
+// 	char buffer[1024] = {0};
+// 	int valread=0;
+//     valread = read( net_socket, buffer, 1024); 
+//     printf("%s\n",buffer ); 
  
-	return 1;
+	return net_socket;
 }
 
 
@@ -105,8 +121,8 @@ the configure file and pass it into the tryconnect funtion
 
 
 */
-void GetIandP(){
-
+int GetIandP(){
+	
 	//open file
 	int fd =open(".configure",O_RDONLY);
 	
@@ -146,8 +162,153 @@ void GetIandP(){
 	}
 	
 	 int success =tryConnect(IP,Port);
-	return;
+	return success;
 }
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////Create method////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+/*
+//this method takes will take in the project name and make a local version of them project folder in its current directory and should place
+the .Manifest the server sent in it.
+
+
+*/
+
+
+
+int findConfig(){
+
+	 struct dirent *de;  // Pointer for directory entry 
+  
+    // opendir() returns a pointer of DIR type.  
+    DIR *dr = opendir("."); 
+	 if (dr == NULL)  // opendir returns NULL if couldn't open directory 
+    { 
+        printf("Could not open current directory" ); 
+        return 0; 
+    } 
+	while ((de = readdir(dr)) != NULL){
+		if(strcmp(de->d_name ,".configure")){
+			return 1;
+
+		}
+
+	}
+        
+
+
+   return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int CreateProjectfolder(int fd, char * Project_name){
+	int valread=1;
+	int firstloop =0;
+	char * name_of_Project= (char*) malloc(sizeof(char));
+	char * buffer = (char*) malloc(sizeof(char));
+	
+	// when 0 is reached then that is the end of the file
+	while(valread!=0){
+		char * buffer = (char*) malloc(sizeof(char));
+		valread = read(fd, buffer, 1);
+
+		if(strcmp(buffer, ":")==0){
+			break;
+
+		}
+
+		if(valread ==-1 ){
+			printf("could not project name!");
+			return -1;
+
+		}
+
+		strcat(name_of_Project,buffer);
+	}
+
+
+
+
+	 int check = mkdir(name_of_Project);
+
+	if(!check){
+		printf("directory created\n ");
+
+	}
+	else{
+
+		printf("Unable to create directory\n");
+		return -1;
+	}
+ 
+
+
+
+
+	return 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -155,7 +316,11 @@ void GetIandP(){
 
 
 int main(int argc, char * argv[]){
+
+
+
 int Configcall =0;
+int Create =0;
 for(int i=0; i<argc-1;i++){
 	if(strcmp(argv[i],"configure")==0){
 	
@@ -163,18 +328,62 @@ for(int i=0; i<argc-1;i++){
 		continue;
 	}
 	//Configure is called as a command so we have call configure method to write 
-	//ip number and port number to the file
-	if(Configcall==1){
-		
 
+	//ip number and port number to the file
+	else if(Configcall==1){
+		
+		//write the configure file
 		configure(argv[i],argv[i+1]);
+		
 		
 			break;
 	}
+	else if(strcmp(argv[i],"create")==0){
+		Create =1;
+		continue;
+	}//this means that create was called
+	else if(Create ==1 ){
+
+		int success =findConfig();
+		
+		if(success ==1){
+			//get the ip and port from configure file and connect it to the server
+		int pass =GetIandP();
+		//if this statement goes through then the connection failed to the server
+		if(pass == -1){
+			return -1;
+
+		}
+			char * buffer = (char*) malloc(sizeof("folder not found") +1);
+			int valread=0;
+	     valread = read( pass, buffer, sizeof(buffer)); 
+
+		 if(strcmp(buffer,"folder not found")==0){
+			 	CreateProjectfolder(pass,argv[i+1]);
+				 printf("folder was created!");
+		 }
+		 else if(strcmp(buffer, "folder is found")==0){
+			 printf("the project folder already exists!");
+			 return 0;
+		 }
+
+			
+
+
+			break;
+
+		}
+		else if(success == 0){
+			printf("ERROR! Configure command was not called before this command!");
+			return -1;
+		}
+	
+	}
+	
 
 }
 
- GetIandP();
+ 
 
 	return 0;
 }
