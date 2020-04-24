@@ -268,7 +268,7 @@ int CreateProjectfolder(int fd, char * Project_name){
 
 
 
-	 int check = mkdir(name_of_Project);
+	 int check = mkdir(name_of_Project,S_IRWXU);
 
 	if(!check){
 		printf("directory created\n ");
@@ -344,26 +344,67 @@ for(int i=0; i<argc-1;i++){
 	}//this means that create was called
 	else if(Create ==1 ){
 
+		//this will call the findconfig method which returns and int of 1 if found or  -1 if not found
+		//checks the directory to see if the config file was found
 		int success =findConfig();
 		
+		/*
+			if find config returns a 1 then we will do the GetIandP method which
+			reads from the .config file and finds the IP and Port and sends it to the 
+			tryConnect() method to try and connect to the server every 3 seconds until success
+		*/
 		if(success ==1){
-			//get the ip and port from configure file and connect it to the server
 		int pass =GetIandP();
-		//if this statement goes through then the connection failed to the server
+		
+		/*
+			this means that the tryConnect() method has failed to connect to the server so we 
+			will return a -1 and end the program
+		*/
 		if(pass == -1){
 			return -1;
 
 		}
-			char * buffer = (char*) malloc(sizeof("folder not found") +1);
-			int valread=0;
-	     valread = read( pass, buffer, sizeof(buffer)); 
+
+		/*
+			send the project name over to the server for it to check if it exists already
+			pass is the file descriptor that got passed through from the tryConnect() method
+
+		*/
+		send(pass , argv[i+1] , strlen(argv[i+1]) , 0 );
+		char * buffer = (char*) malloc(sizeof("folder not found") +1); 	//malloc size for the buffer to be read from server
+		int valread=0; // return the bytes read after read is called
+		valread = read( pass, buffer, sizeof(buffer));  //reads from the server and stores it into the buffer char *
+
+		/*
+			these if statements will strcmp the buffer and the phrase "folder not found"
+			if they are equal then we create the project folder into the current directory
+			
+			if buffer and the phrase "folder is found" are equal then we print out the "the project
+			already exists" and return -1 to end the program and close the socket
+		*/
+
+		int folder_Created=0;
 
 		 if(strcmp(buffer,"folder not found")==0){
-			 	CreateProjectfolder(pass,argv[i+1]);
-				 printf("folder was created!");
+			 	folder_Created = CreateProjectfolder(pass,argv[i+1]);
+				
+				if(folder_Created==1){
+					 printf("folder was created!");
+				 //close the socket after the command
+				 close(pass);
+
+				}
+				else if(folder_Created == -1){
+					printf("folder could not be created");
+					// close the socket after command
+					close(pass);
+				}
+			
+				
 		 }
 		 else if(strcmp(buffer, "folder is found")==0){
 			 printf("the project folder already exists!");
+			 close(pass);
 			 return 0;
 		 }
 
