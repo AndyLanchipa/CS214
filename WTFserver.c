@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 
 
@@ -73,21 +74,78 @@ int main(int argc, char *argv[]){
 		printf("Listen Error\n");
 		return 1;
 	}
-	int socketlen = sizeof(address);
-	int NewSocketfd = accept(serverfd, (struct sockaddr *) &address, (socklen_t *) &socketlen);	//accept a server connection
-	
-	if (NewSocketfd < 0){
-		printf("Accept Error\n");
-		return 1;
+
+	int socketlen;
+	int NewSocketfd;
+	int CommandRead;
+	char *commandResponse = "Processing Command...\n";
+	char *incCommand = "Incorrect Command was received\n";
+
+	while (1){	//infinite loop
+		printf("Waiting for connections... \n");
+
+		socketlen = sizeof(address);
+		NewSocketfd = accept(serverfd, (struct sockaddr *) &address, (socklen_t *) &socketlen);	//accept a server connection
+		if (NewSocketfd < 0){
+			printf("Accept Failed\n");
+			return 1;
+		}
+		printf("Client Connected!\n");
+
+		//handle the connection 
+		char *commandBuffer = (char *)malloc(41 * sizeof(char));
+		CommandRead = read(NewSocketfd, commandBuffer, 40);	//reads a command sent from client
+		send(NewSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
+
+
+		printf("commandBuffer = %s\n", commandBuffer);	//print the command received
+
+		if (strcmp(commandBuffer, "checkout") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "update") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "upgrade") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "commit") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "push") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "create") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "destroy") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "add") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "remove") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "currentversion") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "history") == 0){
+
+		}
+		else if (strcmp(commandBuffer, "rollback") == 0){
+
+		}
+		else {	//an incorrect command was sent, so print to server and send error to client
+			printf("Incorrect command was received...\n");
+			send(NewSocketfd, incCommand, strlen(incCommand));
+		}
+
+		free(commandBuffer);
 	}
 
-	char buffer[1024] = {0};
-	int valRead = read(NewSocketfd, buffer, 1024);
-	printf("server received: %s\n", buffer);
-	char hello[1024] = "yo what's good";
-	send(NewSocketfd , hello, strlen(hello) , 0);
+	
 
 
 	return 0; 
 }
-
