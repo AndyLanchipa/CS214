@@ -8,16 +8,96 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+
+
+char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
+
+	char *readBuffer = NULL; 
+	char *word = NULL;	//stores the word that will be returned
+	int readval;
+
+	while(1){
+		
+		readBuffer = (char *)malloc(sizeof(char));
+		readval = read(clientSocket, readBuffer, 1);
+
+		if (readval == 0){	//if readval == 0 then that means that there was nothing left to read... colon was not encountered
+			printf("colon was not encountered at the end\n");
+			break;
+		}
+
+		if (strcmp(readBuffer, ":") == 0){	//when a colon is encountered it is the end of the word
+			break;
+		}
+
+		if (word == NULL){ //if its the first character read
+			word = readBuffer;
+		}
+		else{	//add readbuffer onto word
+			strcat(word, readBuffer);
+		}
+	}
+
+	return word;
+}
 
 
 
-/*  
-void *
+void *createThread(void *ptr_clientSocket){	//thread used to handle a create function call from client
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *fileName = (char *)malloc(300 * sizeof(char));
+	strcpy(fileName, readToColon(clientSocket));
+	printf("fileName = %s\n", fileName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, fileName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+		}
+	}
+
+	if (projFound == 1){	//if project is in the directory, then send an error since the project already exists
+		printf("Project already exists\n");
+	}
+	else {	//if project is not found in the directory, then create the project and manifest file
+		printf("Project not found\n");
+		char projectPath[302] = "./";
+		printf("hello\n");
+		strcat(projectPath, fileName);
+		printf("projectPath = %s\n", projectPath);
+
+		mkdir(projectPath, 0777);	//make the project specified
+		strcat(projectPath, "/.Manifest");
+		int manifest = creat(projectPath, S_IRWXU);	//create the .Manifest file for the project
+		if (manifest < 0){
+			printf(".Manifest file could not be created\n");
+		}
+
+		manifest = open(projectPath, O_RDONLY);	//open the file to be read
+		sendfile(manifest, clientSocket, 0, );
+
+
+	}
 
 
 
-
-*/
+	return NULL;
+}
 
 
 void sighandler(int val){
@@ -75,73 +155,85 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
 
+
 	int socketlen;
-	int NewSocketfd;
-	int CommandRead;
+	int ClientSocketfd;
 	char *commandResponse = "Processing Command...\n";
 	char *incCommand = "Incorrect Command was received\n";
 
-	while (1){	//infinite loop
+	
+	////////////////////////////////////////////////////////////////////////////SERVER LOOP IS HERE 
+
+	while (1){	//infinite loop for server to listen for connections and process them in threads
+		
+		//accept a client
 		printf("Waiting for connections... \n");
-
 		socketlen = sizeof(address);
-		NewSocketfd = accept(serverfd, (struct sockaddr *) &address, (socklen_t *) &socketlen);	//accept a server connection
-		if (NewSocketfd < 0){
+		ClientSocketfd = accept(serverfd, (struct sockaddr *) &address, (socklen_t *) &socketlen);	//accept a server connection
+		if (ClientSocketfd < 0){
 			printf("Accept Failed\n");
-			return 1;
+			continue;
 		}
-		printf("Client Connected!\n");
-
-		//handle the connection 
-		char *commandBuffer = (char *)malloc(41 * sizeof(char));
-		CommandRead = read(NewSocketfd, commandBuffer, 40);	//reads a command sent from client
-		send(NewSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
+		printf("Client Connected!\n");	//announce that a Client has been connected
 
 
-		printf("commandBuffer = %s\n", commandBuffer);	//print the command received
+		////////////////////////////////////////////////////////////////////HANDLE THE CONNECTION
 
-		if (strcmp(commandBuffer, "checkout") == 0){
+		char *command = (char *)malloc(41 * sizeof(char));;
+		strcpy(command, readToColon(ClientSocketfd));	//reads a command sent from client
+		send(ClientSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
 
-		}
-		else if (strcmp(commandBuffer, "update") == 0){
+		printf("commandBuffer = %s\n", command);	//print the command received
+
+		if (strcmp(command, "checkout") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "upgrade") == 0){
+		else if (strcmp(command, "update") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "commit") == 0){
+		else if (strcmp(command, "upgrade") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "push") == 0){
+		else if (strcmp(command, "commit") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "create") == 0){
+		else if (strcmp(command, "push") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "destroy") == 0){
+		else if (strcmp(command, "create") == 0){	//calls the create function
+
+			printf("create function called...\n");	//announce what function was called
+			pthread_t createT;
+			int *createClient = (int *)malloc(sizeof(int));
+			*createClient = ClientSocketfd;
+			pthread_create(&createT, NULL, createThread, createClient);
 
 		}
-		else if (strcmp(commandBuffer, "add") == 0){
+		else if (strcmp(command, "destroy") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "remove") == 0){
+		else if (strcmp(command, "add") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "currentversion") == 0){
+		else if (strcmp(command, "remove") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "history") == 0){
+		else if (strcmp(command, "currentversion") == 0){
 
 		}
-		else if (strcmp(commandBuffer, "rollback") == 0){
+		else if (strcmp(command, "history") == 0){
 
 		}
-		else {	//an incorrect command was sent, so print to server and send error to client
+		else if (strcmp(command, "rollback") == 0){
+
+		}
+		else {	//an incorrect command was sent, so print to server and send error to client... will most likely never happen
 			printf("Incorrect command was received...\n");
-			send(NewSocketfd, incCommand, strlen(incCommand));
+			send(ClientSocketfd, incCommand, strlen(incCommand), 0);
 		}
 
-		free(commandBuffer);
+		printf("\n");
+		free(command);
 	}
 
 	
