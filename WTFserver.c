@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include <sys/mman.h>
+
 
 
 char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
@@ -45,7 +47,74 @@ char *readToColon(int clientSocket){	//reads from socket until a colon is encoun
 	return word;
 }
 
+char *getFileChars(char *fileName, int size){
+	int fd = open(fileName, O_RDONLY);
 
+	char * readBuffer = (char *)malloc(size * sizeof(char));
+	int readerr = read(fd, readBuffer, size);
+
+
+	return readBuffer;
+}
+
+int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the stream...
+	//format: (# of chars in name):(filename):(# of chars in file):(chars in file):
+
+	struct stat forSize;  
+	int filesize;
+
+    if (stat(fileName, &forSize) == 0) {
+        filesize = (int)forSize.st_size;
+	}
+    else {
+		printf("Size could not be found\n");
+        return -1;
+	}
+
+
+
+	char *fileNamec = (char *)malloc((1 + strlen(fileName)) * sizeof(char));
+	strcpy(fileNamec, fileName);
+	strcat(fileNamec, ":");
+
+	char *sendColon = ":";	//send buffer for :
+
+	char *sendFilePathLen = (char *)malloc((1 + strlen(fileName)) * sizeof(char));
+	sprintf(sendFilePathLen, "%d", (int)strlen(fileName)); //send buffer for the file path 
+	strcat(sendFilePathLen, sendColon);
+
+	char *charsInFile = (char *)malloc((1 + forSize.st_size) * sizeof(char));
+	strcpy(charsInFile, getFileChars(fileName, forSize.st_size));	//stores send buffer to send the bytes in the file
+	strcat(charsInFile, sendColon);
+
+	char *sendFilecontentsLen = (char *)malloc((1 + strlen(charsInFile)) * sizeof(char));	
+	sprintf(sendFilecontentsLen, "%d", filesize);	//send buffer for # of chars in file
+	strcat(sendFilecontentsLen, sendColon);
+	
+
+	int senderr = send(clientFD, sendFilePathLen, strlen(sendFilePathLen), 0);	/////send the number of chars in the file path
+	if (senderr < 0){
+		return -1;
+	}
+
+	senderr = send(clientFD, fileNamec, strlen(fileNamec), 0);	/////////////////send the file path
+	if (senderr < 0){
+		return -1;
+	}
+
+	senderr = send(clientFD, sendFilecontentsLen, strlen(sendFilecontentsLen), 0); /////send the # of chars in the file)
+	if (senderr < 0){
+		return -1;
+	}
+
+	senderr = send(clientFD, charsInFile, filesize, 0);	//send the string of all characters in the file
+	if (senderr < 0){
+		return -1;
+	}
+
+	return 1;
+
+}
 
 void *createThread(void *ptr_clientSocket){	//thread used to handle a create function call from client
 	int clientSocket = *((int *)ptr_clientSocket);
@@ -55,7 +124,8 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 
 	char *fileName = (char *)malloc(300 * sizeof(char));
 	strcpy(fileName, readToColon(clientSocket));
-	printf("fileName = %s\n", fileName);
+
+	printf("creating project: ./%s\n", fileName);
 
 	struct dirent *dirPtr;
 	DIR *dir = opendir("./");
@@ -71,30 +141,38 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		}
 	}
 
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
 	if (projFound == 1){	//if project is in the directory, then send an error since the project already exists
-		printf("Project already exists\n");
+		printf("%s already exists\n", fileName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
 	}
 	else {	//if project is not found in the directory, then create the project and manifest file
-		printf("Project not found\n");
 		char projectPath[302] = "./";
-		printf("hello\n");
 		strcat(projectPath, fileName);
-		printf("projectPath = %s\n", projectPath);
 
-		mkdir(projectPath, 0777);	//make the project specified
+		if (mkdir(projectPath, 0777) < 0){	//make the project specified
+			printf("%s directory could not be created\n", projectPath);
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+		}
+
 		strcat(projectPath, "/.Manifest");
 		int manifest = creat(projectPath, S_IRWXU);	//create the .Manifest file for the project
 		if (manifest < 0){
 			printf(".Manifest file could not be created\n");
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
 		}
 
-		manifest = open(projectPath, O_RDONLY);	//open the file to be read
-		sendfile(manifest, clientSocket, 0, );
 
-
+		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
+		char *sendSF = "sendfile:1:";
+		senderr = send(clientSocket, sendSF, strlen(sendSF), 0);
+		senderr = sendTheFiles(clientSocket, projectPath);
+		
 	}
-
-
 
 	return NULL;
 }
@@ -158,7 +236,7 @@ int main(int argc, char *argv[]){
 
 	int socketlen;
 	int ClientSocketfd;
-	char *commandResponse = "Processing Command...\n";
+	char *commandResponse = "Processing Command...\n:";
 	char *incCommand = "Incorrect Command was received\n";
 
 	
@@ -179,9 +257,10 @@ int main(int argc, char *argv[]){
 
 		////////////////////////////////////////////////////////////////////HANDLE THE CONNECTION
 
-		char *command = (char *)malloc(41 * sizeof(char));;
+		char *command = (char *)malloc(41 * sizeof(char));
 		strcpy(command, readToColon(ClientSocketfd));	//reads a command sent from client
-		send(ClientSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
+
+		//send(ClientSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
 
 		printf("commandBuffer = %s\n", command);	//print the command received
 
@@ -202,12 +281,11 @@ int main(int argc, char *argv[]){
 		}
 		else if (strcmp(command, "create") == 0){	//calls the create function
 
-			printf("create function called...\n");	//announce what function was called
 			pthread_t createT;
 			int *createClient = (int *)malloc(sizeof(int));
 			*createClient = ClientSocketfd;
 			pthread_create(&createT, NULL, createThread, createClient);
-
+			
 		}
 		else if (strcmp(command, "destroy") == 0){
 
