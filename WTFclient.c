@@ -276,7 +276,7 @@ int recieveFilefromServer(int fd , char * foldername){
 
 	int size=0;
 
-	int getWsize= 0;//this gets the write size of the file
+
 
 
 	while(1){
@@ -431,18 +431,18 @@ printf("before while looop\n\n\n\n");
 
 				size= atoi(Currentword);
 
-				getWsize=size;
+				
 				//if number of files is reached this means that it is writing to last file
 				//however if the size of this file is zero then we write nothing so we break out 
 				//of it
-				if( getWsize ==0){
+				if( size ==0){
 					i++;
 
 					if(i==numofFiles){
 						break;
 					}
 				}
-				else if( getWsize==0){
+				else if(size==0){
 					i++;
 					if(i!=numofFiles){
 						Getfsize==0;
@@ -465,12 +465,12 @@ printf("before while looop\n\n\n\n");
 
 
 			}
-			else if( getWsize >0 && File_created==1 ){
+			else if( size >0 && File_created==1 ){
 				printf("here2\n\n\n");
 				i++;
 				
 				int o = open(filename, O_RDWR);
-				file_content= (char*) malloc(sizeof(char)*getWsize);
+				file_content= (char*) malloc(sizeof(char)*size);
 				strcpy(file_content, Currentword);
 				int sz=write(o,file_content,strlen(file_content));
 			
