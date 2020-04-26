@@ -20,132 +20,6 @@ void sendtoServer(int fd , char*to_Send){
 
 }
 
-int recieveFilefromServer(int fd , char* File_string, char * foldername){
-
-	int bytes =sizeof(File_string);
-	char *Currentword= (char*) malloc(sizeof(char));
-	char * file_content =NULL;
-	char *filename=NULL;
-	
-	int Read =0;
-
-	int numofFiles =0; //this will store the amount of files that are sent over
-
-	int File_created =0;
-
-	int Getfsize=0;
-
-	int size=0;
-
-
-	for(int i =0 ; i<bytes; i++){
-		char * Buffer = (char *) malloc(sizeof(char));
-		Read = read(fd, Buffer, 1);
-
-		if(Read==-1){
-
-			printf("could not read from file!");
-			return -1;
-		}
-
-
-		//this will be either a file name or number of bytes
-		if(strcmp(Buffer,":") == 0){
-
-			//if we encounter sendfile then that means we s
-			if(strcmp(Currentword,"sendfile")){
-
-				if(foldername!=NULL){
-
-				}
-
-				Currentword="";
-
-				continue;
-			}//this will get the number of files and store and move on to get the number of chars in file name
-			else if(numofFiles ==0){
-
-				numofFiles= atoi(Currentword);
-
-				Currentword="";//reset word
-
-				continue;
-			}//if numofFiles is greater than 0 then that means we have read up until the amount of files and the next number
-			 //will be the number of bytes for file name
-			else if(numofFiles>0 && Getfsize==0){
-				Getfsize=1;
-				//convert size of file into integer
-				size = atoi(Currentword);
-				Currentword="";
-				continue;
-			}//create the file since we have file size
-			else if(Getfsize>0 && File_created==0){
-				File_created==1;
-				//malloc file name
-				filename =(char *) malloc(sizeof(char)* size);
-				strcpy(filename,Currentword);
-				
-				int cre = creat(filename,S_IRWXU);
-
-				size=0;
-				Currentword="";
-				continue;
-
-			}//this means that the file size and file have been created so now  get size of contents in file
-			else if(size==0 && File_created==1){
-
-				size= atoi(Currentword);
-				Currentword="";
-				continue;
-
-
-			}
-			else if(size >0 && File_created==1 ){
-				int o = open(filename, O_RDWR);
-				file_content= (char*) malloc(sizeof(char)*size);
-				strcpy(file_content, Currentword);
-				int sz=write(o,Currentword,strlen(Currentword));
-				Currentword="";
-				continue;
-
-
-
-
-			}
-
-		}
-		else {
-			strcat(Currentword,Buffer);
-			
-			//this means that the function has failed and the file was not sent back
-			if(strcmp(Currentword,"Failed")==0){
-				return -1;
-
-			}
-		}
-
-
-
-
-	}
-
-
-
-
-	return 1;
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -236,7 +110,7 @@ int tryConnect(char * IP, char * PORT){
 	int connection_stat; //this will see if the connection is successful
 
 	while(1){	
-	printf("connecting");
+	printf("connecting\n");
 	connection_stat =connect(net_socket, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr));	
 	//the connection went through and we will stop trying to constantly connect
 	if(connection_stat == 0){
@@ -250,7 +124,7 @@ int tryConnect(char * IP, char * PORT){
 
 	//need to perform while loop so it attempts to connect 3 times
      if(connection_stat <0){
-         printf("there is an error to connect the socket to the server");
+         printf("there is an error to connect the socket to the server\n");
      }
 
  
@@ -299,12 +173,12 @@ int GetIandP(){
 	}
 	else if(strcmp(readBuffer," ")> 0 && ipGot==1){
 		strcat(Port,readBuffer);
-		;
+		
 	}
 		
 
 	}
-	
+	printf("PORT: %s\n", Port);
 	 int success =tryConnect(IP,Port);
 	return success;
 }
@@ -331,11 +205,13 @@ int findConfig(){
     DIR *dr = opendir("."); 
 	 if (dr == NULL)  // opendir returns NULL if couldn't open directory 
     { 
-        printf("Could not open current directory" ); 
+        printf("Could not open current directory\n" ); 
         return 0; 
     } 
 	while ((de = readdir(dr)) != NULL){
-		if(strcmp(de->d_name ,".configure")){
+
+		printf("name: %s\n\n\n",de->d_name);
+		if(strcmp(de->d_name ,".configure")==0){
 			return 1;
 
 		}
@@ -357,9 +233,11 @@ the .Manifest the server sent in it.
 
 int CreateProjectfolder(char * Project_name){
 	
+char * some = (char*) malloc((strlen(Project_name)+2) * sizeof(char));
+strcpy(some,"./");
+strcat(some,Project_name);
 
-
-	 int check = mkdir(Project_name,S_IRWXU);
+	 int check = mkdir(some,S_IRWXU);
 
 	if(!check){
 		printf("directory created\n ");
@@ -377,6 +255,299 @@ int CreateProjectfolder(char * Project_name){
 
 	return 1;
 }
+
+
+
+
+int recieveFilefromServer(int fd , char * foldername){
+
+	
+	char *Currentword= (char*) malloc(sizeof(char));
+	char * file_content =NULL;
+	char *filename=NULL;
+	
+	int Read =0;
+
+	int numofFiles =0; //this will store the amount of files that are sent over
+
+	int File_created =0;
+
+	int Getfsize=0;
+
+	int size=0;
+
+	int getWsize= 0;//this gets the write size of the file
+
+
+	while(1){
+		char * Buffer = (char *) malloc(sizeof(char));
+		Read = read(fd, Buffer, 1);
+	
+
+		if(Read==-1){
+
+			printf("could not read from file!\n");
+			return -1;
+		}
+
+
+		if(strcmp(Buffer,":")==0){
+	
+			//if we encounter sendfile then that means we s
+			if(strcmp(Currentword,"sendfile")==0){
+
+		
+
+				if(foldername!=NULL){
+
+					printf("%s\n\n\n",foldername);
+					
+					CreateProjectfolder(foldername);
+			
+
+				}
+				
+
+				Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+
+				
+
+				
+
+			
+
+				continue;
+			}
+			else if(numofFiles ==0){
+			
+
+				numofFiles= atoi(Currentword);
+			
+			Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+
+				break;
+			}
+			
+
+		}
+		else{
+			
+
+			strcat(Currentword,Buffer);
+			
+			
+			//this means that the function has failed and the file was not sent back
+			if(strcmp(Currentword,"Failed")==0){
+				return -1;
+
+			}
+
+		}
+
+
+
+	}
+
+
+
+
+
+
+
+printf("before while looop\n\n\n\n");
+
+
+
+
+	int i=0;
+	printf("numoffile %d:\n",numofFiles);
+
+	while(i<numofFiles+1){
+		char * Buffer = (char *) malloc(sizeof(char));
+
+		// if(i==(numofFiles-1)){
+		// 			break;// we break because we have written to the last file
+
+		// 		}
+		if(Buffer=="\0"){
+			break;
+		}
+
+		printf("before read %s\n\n\n", Buffer);
+		Read = read(fd, Buffer, 1);
+		printf("after read\n\n\n");
+
+		
+
+		if(Read==-1){
+
+			printf("could not read from file!\n");
+			return -1;
+		}
+
+			printf("Buffer: %s\n\n\n",Buffer);
+		//this will be either a file name or number of bytes
+		if(strcmp(Buffer,":") == 0){
+			
+		
+
+			//if numofFiles is greater than 0 then that means we have read up until the amount of files and the next number
+			 //will be the number of bytes for file name
+			 if(numofFiles>0 && Getfsize==0){
+				 
+			
+				Getfsize=1;
+				//convert size of file into integer
+				size = atoi(Currentword);
+				
+				Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+				continue;
+			}//create the file since we have file size
+			else if(Getfsize>0 && File_created==0){
+				printf("here creating file\n\n\n");
+			
+				File_created=1;
+				//numofFiles++;
+				//malloc file name
+				filename =(char *) malloc(sizeof(char)* size);
+				strcpy(filename,Currentword);
+				
+				int cre = creat(filename,S_IRWXU);
+
+				size=0;
+				printf("here after file create\n\n\n");
+				Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+				printf("here after file create 2\n\n\n");
+				printf("filecreated : %d\n\n\n\n\n\n\n", File_created);
+				continue;
+
+			}//this means that the file size and file have been created so now  get size of contents in file
+			else if(size==0 && File_created==1){
+				printf("here1\n\n\n");
+
+				size= atoi(Currentword);
+
+				getWsize=size;
+				//if number of files is reached this means that it is writing to last file
+				//however if the size of this file is zero then we write nothing so we break out 
+				//of it
+				if( getWsize ==0){
+					i++;
+
+					if(i==numofFiles){
+						break;
+					}
+				}
+				else if( getWsize==0){
+					i++;
+					if(i!=numofFiles){
+						Getfsize==0;
+						File_created==0;
+						size==0;
+						Currentword=NULL;
+						Currentword =(char*) malloc(sizeof(char));
+						continue;
+
+					}
+				}
+				
+				
+				printf("here1.5\n\n\n");
+				Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+
+				
+				continue;
+
+
+			}
+			else if( getWsize >0 && File_created==1 ){
+				printf("here2\n\n\n");
+				i++;
+				
+				int o = open(filename, O_RDWR);
+				file_content= (char*) malloc(sizeof(char)*getWsize);
+				strcpy(file_content, Currentword);
+				int sz=write(o,file_content,strlen(file_content));
+			
+			Currentword=NULL;
+				Currentword =(char*) malloc(sizeof(char));
+				Getfsize==0;
+				File_created==0;
+				size==0;
+				
+
+				
+				continue;
+
+
+
+
+			}
+
+		}
+		else {
+			
+			strcat(Currentword,Buffer);
+			printf("After Buffer: %s\n\n\n\n\n\n", Currentword);
+			
+			//this means that the function has failed and the file was not sent back
+			if(strcmp(Currentword,"Failed")==0){
+				return -1;
+
+			}
+			
+		}
+
+
+
+
+	}
+
+
+
+
+	return 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /////////////////////////////////////////////////////Destroy method/////////////////////////////////////////////////////////////////////////
 
@@ -397,7 +568,7 @@ int Create =0;
 
 int Destroy_call=0;
 
-for(int i=0; i<argc-1;i++){
+for(int i=0; i<argc;i++){
 	if(strcmp(argv[i],"configure")==0){
 	
 		Configcall=1;
@@ -426,21 +597,24 @@ for(int i=0; i<argc-1;i++){
 			break;
 	}
 	else if(strcmp(argv[i],"create")==0){
+		printf("herereere\n\n\n\n\n");
 		Create =1;
 		continue;
 	}//this means that create was called
 	else if(Create ==1 ){
-
+		
+printf("herereere\n\n\n\n\n");
 		//this will call the findconfig method which returns and int of 1 if found or  -1 if not found
 		//checks the directory to see if the config file was found
 		int success =findConfig();
-		
+		printf("herereere: %d\n\n\n\n\n", success);
 		/*
 			if find config returns a 1 then we will do the GetIandP method which
 			reads from the .config file and finds the IP and Port and sends it to the 
 			tryConnect() method to try and connect to the server every 3 seconds until success
 		*/
 		if(success ==1){
+			printf("herereerein\n\n\n\n\n");
 		int pass =GetIandP();
 		
 		/*
@@ -457,19 +631,22 @@ for(int i=0; i<argc-1;i++){
 			pass is the file descriptor that got passed through from the tryConnect() method
 
 		*/
-		char * command =(char*) malloc(sizeof(argv[i+1])+3);
+		char * command =(char*) malloc(sizeof(argv[i-1])+1);
 		command ="create:";
-		char * project_name =(char*) malloc(sizeof(argv[i+1])+3);
-		project_name = argv[i+1];
+		char * project_name =(char*) malloc(sizeof(argv[i])+1);
+		strcpy(project_name,argv[i]);
 		strcat(project_name,":");
 		//sends command to server
 		sendtoServer(pass, command);
 		sendtoServer(pass,project_name);
-		
 
-		char * buffer = (char*) malloc(sizeof(char)); 	//malloc size for the buffer to be read from server
+
+		
 		int valread=0; // return the bytes read after read is called
-		valread = read( pass, buffer, sizeof(buffer));  //reads from the server and stores it into the buffer char *
+		printf("HERE 1 %s:\n",argv[i]);
+
+		recieveFilefromServer(pass , argv[i]);
+		printf("HERE 2:\n");
 
 		
 			
@@ -478,8 +655,8 @@ for(int i=0; i<argc-1;i++){
 			break;
 
 		}
-		else if(success == 0){
-			printf("ERROR! Configure command was not called before this command!");
+		else if(success == -1){
+			printf("ERROR! Configure command was not called before this command!\n");
 			return -1;
 		}
 	
@@ -546,7 +723,7 @@ for(int i=0; i<argc-1;i++){
 	
 		}
 		else if(success == 0){
-			printf("ERROR! Configure command was not called before this command!");
+			printf("ERROR! Configure command was not called before this command!\n");
 			return -1;
 		}
 		
