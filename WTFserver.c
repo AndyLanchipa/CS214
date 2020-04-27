@@ -112,6 +112,11 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 		return -1;
 	}
 
+	senderr = send(clientFD, sendColon, strlen(sendColon), 0); // send a colon
+	if (senderr < 0){
+		return -1;
+	}
+
 	return 1;
 
 }
@@ -138,6 +143,7 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
 		if(strcmp(dirPtr->d_name, fileName) == 0){
 			projFound = 1;	// logs that the project is in the directory
+			break;
 		}
 	}
 
@@ -165,7 +171,8 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 			printf(".Manifest file could not be created\n");
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
 		}
-
+		char *versionNo = "0\n";
+		senderr = write(manifest, versionNo, strlen(versionNo));
 
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
 		char *sendSF = "sendfile:1:";
@@ -177,6 +184,105 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 	return NULL;
 }
 
+void destroyDirectory(char *projName){
+
+	DIR *directory = opendir(projName);
+	struct dirent *fileptr;
+	int fd = 0;
+
+	if (!directory){
+		return;
+	}
+
+
+
+	while ((fileptr = readdir(directory)) != NULL){
+		if (strcmp(fileptr->d_name, ".") != 0 && strcmp(fileptr->d_name, "..") != 0){
+			if (fileptr->d_type == DT_DIR){
+				//recursively into directory
+				//then delete directory after it returns
+				char *newFilePath = (char *)malloc((strlen(projName) + strlen(fileptr->d_name) + 2) * sizeof(char));
+
+				strcpy(newFilePath, projName);
+				strcat(newFilePath, "/");
+				strcat(newFilePath, fileptr->d_name);
+
+				destroyDirectory(newFilePath);
+				
+				rmdir(newFilePath);
+
+				free(newFilePath);
+			}
+			else {	//if its a file
+				char *newFilePath = (char *)malloc((strlen(projName) + strlen(fileptr->d_name) + 2) * sizeof(char));
+
+				strcpy(newFilePath, projName);
+				strcat(newFilePath, "/");
+				strcat(newFilePath, fileptr->d_name);
+
+
+				unlink(newFilePath);
+
+
+				free(newFilePath);
+			}
+		}
+	}
+	closedir(directory);
+
+
+}
+
+void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy function call from client
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+
+
+	int projFound = 0;
+
+	char *fileName = (char *)malloc(300 * sizeof(char));
+	strcpy(fileName, readToColon(clientSocket));	//gives the project name
+
+	printf("destroying project: ./%s\n", fileName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, fileName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+	closedir(dir);
+
+	char *sendFail = "Failed:";
+	char *sendSucc = "Deleted:";
+
+	if (projFound == 0) {
+		printf("file does not exist and thus cannot be deleted\n");
+		send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else{	//project was found and must be DESTROYED
+
+		char *projName = (char *)malloc((2 + strlen(fileName)) * sizeof(char));	//stores the project path
+		strcpy(projName, "./");
+		strcat(projName, fileName);
+
+		destroyDirectory(projName);
+		rmdir(projName);
+		send(clientSocket, sendSucc, strlen(sendSucc), 0);
+	}
+
+	return NULL;
+}
 
 void sighandler(int val){
 	printf("Signal caught: %d, Server turning off.\n", val);
@@ -260,8 +366,6 @@ int main(int argc, char *argv[]){
 		char *command = (char *)malloc(41 * sizeof(char));
 		strcpy(command, readToColon(ClientSocketfd));	//reads a command sent from client
 
-		//send(ClientSocketfd, commandResponse, strlen(commandResponse), 0);	//sends a validation response to client that command was received
-
 		printf("commandBuffer = %s\n", command);	//print the command received
 
 		if (strcmp(command, "checkout") == 0){
@@ -288,13 +392,10 @@ int main(int argc, char *argv[]){
 			
 		}
 		else if (strcmp(command, "destroy") == 0){
-
-		}
-		else if (strcmp(command, "add") == 0){
-
-		}
-		else if (strcmp(command, "remove") == 0){
-
+			pthread_t destroyT;
+			int *destroyClient = (int *)malloc(sizeof(int));
+			*destroyClient = ClientSocketfd;
+			pthread_create(&destroyT, NULL, destroyThread, destroyClient);
 		}
 		else if (strcmp(command, "currentversion") == 0){
 
