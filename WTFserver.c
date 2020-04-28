@@ -14,6 +14,91 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+typedef struct filesInManifest {	//used to make a linked list of files in the .Manifest file
+	char *filePath;
+	struct filesInManifest *next;
+} FIM;
+
+FIM *FIMconstructor(char *newPath){	//creates a node for FIM LL
+	FIM *temp = (FIM *)malloc(sizeof(FIM));
+	temp->filePath = (char *)malloc(strlen(newPath) * sizeof(char));
+	temp->next = NULL;
+	strcpy(temp->filePath, newPath);
+	return temp;
+}
+
+void printLL(FIM *head){ //prints linked list
+	FIM *ptr = head; 
+	while (ptr != NULL){
+		printf("%s\n", ptr->filePath);
+		ptr = ptr->next;
+	}
+}
+
+int FIMlen(FIM *head){	//gets the length of a linked List
+	FIM *ptr = head;
+	int count = 0;
+
+	while (ptr != NULL){
+		count++;
+		ptr = ptr->next;
+	}
+	return count;
+}
+
+FIM *manifestPathsLL(int fd){
+	int eof = -1; 
+	int spaceCount = 0;
+	char *currentWord = NULL;
+	
+
+	FIM *head = NULL;
+	FIM *ptr = head; 
+
+
+	while (eof != 0){
+		char *readBuffer = (char *)malloc(sizeof(char));
+		eof = read(fd, readBuffer, 1);
+
+		if (eof == 0){
+			break;
+		}
+
+		if (spaceCount == 1){
+			if (currentWord == NULL){
+				currentWord = readBuffer;
+			}
+			else {
+				strcat(currentWord, readBuffer);
+			}
+		}
+
+		if (strcmp(readBuffer, " ") == 0){
+			spaceCount++;
+			if (spaceCount == 2){
+				if (head == NULL){
+					head = FIMconstructor(currentWord);
+					ptr = head;
+					currentWord = NULL;
+				}
+				else {
+					ptr->next = FIMconstructor(currentWord);
+					ptr = ptr->next;
+					currentWord = NULL;
+				}
+			}
+		}
+		if (strcmp(readBuffer, "\n") == 0){	//when a new line is encountered 
+			spaceCount = 0;
+		}
+		
+
+
+	}
+	
+	
+	return head; 
+}
 
 
 char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
@@ -62,7 +147,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 
 	struct stat forSize;  
 	int filesize;
-
+	printf("fileName = %s\n", fileName);
     if (stat(fileName, &forSize) == 0) {
         filesize = (int)forSize.st_size;
 	}
@@ -233,6 +318,8 @@ void destroyDirectory(char *projName){
 
 }
 
+
+
 void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy function call from client
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
@@ -279,6 +366,91 @@ void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy
 		destroyDirectory(projName);
 		rmdir(projName);
 		send(clientSocket, sendSucc, strlen(sendSucc), 0);
+	}
+
+	return NULL;
+}
+
+
+void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checkout function call from client
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Checking out: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		printf("project exists\n");
+
+		char *cwd = "./";
+		char *mantemp = "/.Manifest";
+		char *manifestName = (char *)malloc((strlen(cwd) + strlen(mantemp) + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, cwd);
+		strcat(manifestName, ProjName);
+		strcat(manifestName, mantemp);
+
+		printf("manifest path = %s\n", manifestName);
+		int manifestFD = open(manifestName, O_RDONLY);
+		//check if manifest file can be opened... if not then something went wrong because there is no manifest file
+		printf("manifest path = %s\n", manifestName);
+
+		FIM *head = NULL;
+		head = manifestPathsLL(manifestFD);
+		
+		int fiml = FIMlen(head);
+		fiml++;
+
+		
+		char *nOfFiles = (char *)malloc((1 + strlen(manifestName)) * sizeof(char));
+		sprintf(nOfFiles, "%d", fiml);
+		strcat(nOfFiles, ":");
+
+		char *sendsucc = (char *)malloc((strlen(nOfFiles) + strlen("sendfile:")) * sizeof(char));
+		strcpy(sendsucc, "sendfile:");
+		strcat(sendsucc, nOfFiles);
+		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
+
+		senderr = sendTheFiles(clientSocket, manifestName);
+
+		FIM *ptr = head;
+		
+		while (ptr != NULL){
+			senderr = sendTheFiles(clientSocket, ptr->filePath);
+			ptr = ptr->next;
+		}
+		
+
+		printLL(head);
+
+		close(manifestFD);
 	}
 
 	return NULL;
@@ -369,6 +541,11 @@ int main(int argc, char *argv[]){
 		printf("commandBuffer = %s\n", command);	//print the command received
 
 		if (strcmp(command, "checkout") == 0){
+
+			pthread_t checkoutT;
+			int *checkoutClient = (int *)malloc(sizeof(int));
+			*checkoutClient = ClientSocketfd;
+			pthread_create(&checkoutT, NULL, checkoutThread, checkoutClient);
 
 		}
 		else if (strcmp(command, "update") == 0){
