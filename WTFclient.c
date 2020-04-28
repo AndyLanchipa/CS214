@@ -6,10 +6,13 @@
 #include <arpa/inet.h> 
 #include <netdb.h>
 #include <unistd.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h> 
 #include <fcntl.h>
+#include <openssl/md5.h>
+#include <sys/mman.h>
 
 
 
@@ -19,6 +22,587 @@ void sendtoServer(int fd , char*to_Send){
 	
 
 }
+
+int FindPath_remove(int fd , char * path){
+
+
+
+//this will be to find how many bytes needed to go back to go back to the letter
+int bytes_to_off = 0;
+
+int at_path = 0;
+
+int eof = 10; // this will be to detect the end of the file
+
+char * Current_word = (char *) malloc(sizeof(char));
+
+while(eof!=0){
+
+char * Buffer = (char*) malloc(sizeof(char));
+
+bytes_to_off++;
+
+eof = read(fd , Buffer , 1);
+if (eof == 0){
+			break;
+		}
+
+
+
+
+
+
+//if the current Buffer is space then that means we have found the end of the word
+		//or if Buffer is the new line meaning we are looking at a new line which is a new file path
+		if(strcmp(Buffer," ")==0 || strcmp(Buffer,"\n")==0){
+			printf("CurrentWord=:%s \n",Current_word);
+
+			at_path++;//tells me where current path is
+			if(strcmp(Buffer,"\n")==0){
+
+
+				Current_word = NULL;
+
+				Current_word = (char*) malloc(sizeof(char));
+				bytes_to_off=0;
+				at_path=0;
+				continue;
+				//continue
+
+			}
+
+			if(at_path == 3 && strcmp(Current_word,path)==0){
+				printf("here at path\n\n\n\n\n\n");
+				lseek(fd,(-1*bytes_to_off),SEEK_CUR);
+
+				int bytes =write(fd,"R", strlen("R"));
+
+				if(bytes == -1){
+					printf("failed to remove entry from .Manifest\n");
+					return -1;
+				}
+
+				
+
+				return 1;
+
+
+
+
+			}//this means that we are at the file path and the paths dont equal so reset current word
+			else if(at_path == 3 && strcmp(Current_word,path)!=0){
+
+				Current_word =NULL;
+				Current_word = (char*) malloc(sizeof(char));
+				continue;
+
+			}
+			Current_word =NULL;
+				Current_word = (char*) malloc(sizeof(char));
+
+
+		}
+		else if(strcmp(Buffer, " ")!=0){
+
+			strcat(Current_word,Buffer);
+
+		}
+
+}
+
+
+
+printf("The file does not exist in the .Manfist file\n");
+
+
+return -1;
+
+
+}
+
+
+int Remove_Manifest(char *Project_name, char * File_path){
+
+	DIR * dir = opendir(Project_name);
+
+
+	if(dir){
+		
+		closedir(dir);
+	
+
+	}
+	else if( ENOENT == errno){
+		printf("Directory does not exist!\n");
+		return -1;
+
+	}
+	else if(dir == NULL){
+		printf("Directory could not be opened!\n");
+		return -1;
+	}
+
+	//building the file path for the file to be attempted to open
+	char * Project_Path = (char* ) malloc (sizeof(Project_name)+ sizeof(".Mainfest")+3);
+	
+	char *Full_path = (char *) malloc( sizeof(Project_name)+sizeof(File_path)+3);//
+	strcat(Full_path,"./");
+	strcat(Full_path,Project_name);
+
+	strcpy(Project_Path,Full_path);
+
+	strcat(Project_Path,"/.Manifest");
+	strcat(Full_path , "/");
+	strcat(Full_path, File_path);
+
+	
+	int pfd =0;
+	pfd= open(Project_Path,O_RDWR);
+
+
+
+
+	if(pfd==-1){
+	
+	printf("The .Manifest file could not be opened or found!\n");
+	return -1;
+
+	
+	}
+
+
+	int success =FindPath_remove(pfd , Full_path);
+
+
+
+
+
+
+	return success;
+}
+
+
+
+
+//////////////////////////////////////////////////////////////////add method///////////////////////////////////////////////////////////////////////////////////////////////////////
+const char * MD5transform(int fd , int size ){
+	unsigned char digest[16];
+
+	char * md5 = (char*) malloc(sizeof(char)*33);
+	//runescap
+	char* Buffer;
+
+	 Buffer = mmap(0, size, PROT_READ, MAP_SHARED, fd, 0);
+	 printf("hereree\n\n\n\n");
+	 MD5((unsigned char*) Buffer, size,digest );
+	  munmap(Buffer, size); 
+
+	  for(int i=0; i<16 ;i++){
+		
+		printf("%02x\n",digest[i]);
+
+		sprintf(&md5[i*2], "%02x", (unsigned int)digest[i]);
+
+		
+
+
+	  }
+
+	  printf("md5 is : %s\n" , md5);
+
+	  return md5;
+
+
+}
+
+/*
+	this will write to the manifest file when add is called
+
+*/
+int WritetoManifest(int fd , char * File_Path , const char * MD5){
+
+	int bytes =0;
+
+//write to the file 
+bytes = write(fd, "A", strlen("A"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd ," ", strlen(" "));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+
+	bytes = write(fd, "0", strlen("0"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+
+	bytes = write(fd," ",strlen(" "));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd, File_Path,strlen(File_Path));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd ," ", strlen(" "));
+	if(bytes==- 1){
+		return -1;
+	}
+	bytes = write(fd,MD5, strlen(MD5));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	
+	bytes = write(fd, "\n",strlen("\n"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	
+
+
+
+
+	return 1;
+}
+
+
+
+int Manifest_containspath(char* FilePath , int fd , const char * MD5){
+	
+	char * Current_word =(char* ) malloc(sizeof(char));
+
+	
+
+	int eof = 10;
+
+	while(eof !=0 ){
+
+
+		char* Buffer =(char*) malloc(sizeof(char));
+
+		eof = read(fd,Buffer, 1);
+		if (eof == 0){
+			break;
+		}
+
+
+
+
+
+		//if the current Buffer is space then that means we have found the end of the word
+		//or if Buffer is the new line meaning we are looking at a new line which is a new file path
+		if(strcmp(Buffer," ")==0 || strcmp(Buffer,"\n")==0){
+			printf("CurrentWord=:%s \n",Current_word);
+
+
+			if(strcmp(Buffer,"\n")==0){
+
+
+				Current_word = NULL;
+
+				Current_word = (char*) malloc(sizeof(char));
+				continue;
+				//continue
+
+
+			}
+			//if the currentword is equal to file path then we break out of loop because 
+			//we already have written this file path with everything to the file already
+			if(strcmp(FilePath,Current_word)==0){
+
+				printf("here  where matches in file\n\n\n");
+
+				return -1;
+
+			}//if it does not equal the file path then proceed to the end of the file 
+			//if the file is not found by the end of this loop the we seek to the end of the file 
+			// and then write
+			else if(strcmp(FilePath,Current_word)!=0){
+
+				Current_word = NULL;
+
+				Current_word = (char*) malloc(sizeof(char));
+				//continue
+				continue;
+
+			}
+		}
+		else if(strcmp(Buffer," ")!= 0){
+
+			strcat(Current_word,Buffer);
+
+
+		}
+
+	}
+
+	//if we make it here that means that the path is not in the file so we write the new path
+
+	int success = WritetoManifest(fd ,FilePath,MD5);
+
+	if(success == -1){
+
+		printf("Failed to write to File!");
+		return -1;
+	}
+
+
+
+
+	return 1;
+
+
+}
+
+
+
+
+int updateManifest(int fd,  const char *md5 ,char * FilePath){
+
+	struct stat st;
+
+stat(FilePath,&st);
+
+int size =st.st_size;
+
+
+
+if(size == 2){
+	/*
+		this means that the mainfest file only has the original zero 
+		in the file and we do not need to check if the file path is already in the file
+	*/
+
+
+	int bytes = 0; //this will hold the read bytes for the reads done in the file 
+	
+
+	/*
+		this writes to the mainfest file in the format
+		Version FilePath hash A , the A is the fact that the file has not been modified
+	*/
+	lseek (fd ,2 ,SEEK_CUR);
+	bytes = write(fd, "A", strlen("A"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd," ",strlen(" "));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+
+	bytes = write(fd, "0", strlen("0"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd," ",strlen(" "));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd, FilePath,strlen(FilePath));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd ," ", strlen(" "));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+	bytes = write(fd,md5, strlen(md5));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+
+	
+	bytes = write(fd, "\n",strlen("\n"));
+	if(bytes==- 1){
+		printf("Failed to write to .Manifest file!\n");
+		return -1;
+	}
+
+	return 1;
+
+
+
+}/*
+	this if statement is if there is a file in the manifest file already 
+	if the file is encountered and has the same file path then we get an error 
+	saying that the file has been written to the file 
+	however if not then we add to the .manifest file
+
+*/
+else if(size>2){
+
+	/*
+		method to traverse through file and find if the file path has is 
+		found inside the file it will return and int
+		-1 if not found and 1 if found
+	*/
+
+	
+	int  success = Manifest_containspath(FilePath ,  fd , md5);
+
+	if(success == -1){
+		//this means that the path was ffound in the file already so 
+		printf("Path already exists in .Manifest File!\n");
+		return -1;
+	}
+
+}
+
+
+
+return 1;
+
+
+}
+
+
+
+
+
+int add(char * Project_name , char * File_name ){
+
+
+	/*
+		check if the file that we are gonna add to the manifest file exists
+		if not then we get an error and do not add it to the manifest file
+	*/
+/*
+		checking to see if the folder exits and if it does then it just closes the
+		directory and skips rest of if statements
+	*/
+	DIR * dir = opendir(Project_name);
+
+
+	if(dir){
+		
+		closedir(dir);
+	
+
+	}
+	else if( ENOENT == errno){
+		printf("Directory does not exist!\n");
+		return -1;
+
+	}
+	else if(dir == NULL){
+		printf("Directory could not be opened!\n");
+		return -1;
+	}
+
+
+
+
+
+	//building the file path for the file to be attempted to open
+	char * Project_Path = (char* ) malloc (sizeof(Project_name)+ sizeof(".Mainfest")+3);
+	
+	char *Full_path = (char *) malloc( sizeof(Project_name)+sizeof(File_name)+3);//
+	strcat(Full_path,"./");
+	strcat(Full_path,Project_name);
+
+	strcpy(Project_Path,Full_path);
+
+	strcat(Project_Path,"/.Manifest");
+	strcat(Full_path , "/");
+	strcat(Full_path, File_name);
+
+	int fd=0;
+	fd = open(Full_path,O_RDONLY);
+
+
+
+	//this means that the file we are looking for does not exist so 
+	//the method fails
+	if(fd == -1){
+		printf("The File that was inputted does not exist!\n");
+
+		return -1;
+	}
+
+
+struct stat st;
+
+
+
+stat(Full_path,&st);
+
+ int size;
+ 
+  if (stat(Full_path, &st) == 0) {
+
+        size = (int)st.st_size;
+	
+	}
+
+
+//buffer to store our hashed file
+ const char * md5 = (char*) malloc(sizeof(char)*33);
+ 
+
+//function to store the md5 has string
+md5= MD5transform(fd,size);
+close(fd);//closes the file given in arguemnet because it has been hashed
+
+//write to manifest file
+int pfd =0;
+pfd= open(Project_Path,O_RDWR);
+
+
+
+
+if(pfd==-1){
+	
+	printf("The .Manifest file could not be opened or found!\n");
+	return -1;
+}
+
+
+	
+	//already opened manifest file now will update it if Full_Path is not found
+//FullPath = ./project3/there1.txt 
+int update = updateManifest(pfd,md5,Full_path);
+
+
+
+
+
+
+	
+
+
+
+
+
+
+	return update;
+}
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -302,7 +886,12 @@ int recieveFilefromServer(int fd , char * foldername){
 
 					printf("%s\n\n\n",foldername);
 					
-					CreateProjectfolder(foldername);
+					int Create_Folder =CreateProjectfolder(foldername);
+
+					if(Create_Folder==-1){
+						return -1;
+
+					}
 			
 
 				}
@@ -473,12 +1062,16 @@ printf("before while looop\n\n\n\n");
 				file_content= (char*) malloc(sizeof(char)*size);
 				strcpy(file_content, Currentword);
 				int sz=write(o,file_content,strlen(file_content));
+				printf("size:%d \n", size);
 			
 			Currentword=NULL;
 				Currentword =(char*) malloc(sizeof(char));
 				Getfsize==0;
 				File_created==0;
 				size==0;
+				if(i==numofFiles){
+						break;
+					}
 				
 
 				
@@ -567,21 +1160,23 @@ int Configcall =0;
 int Create =0;
 
 int Destroy_call=0;
-
+printf("argc: %d\n", argc);
 for(int i=0; i<argc;i++){
-	if(strcmp(argv[i],"configure")==0){
-	
-		Configcall=1;
-		continue;
-	}
-	//Configure is called as a command so we have call configure method to write 
 
-	//ip number and port number to the file
-	else if(Configcall==1){
-		
+
+/////////////////////////////////configure////////////////////////////////////////////////////////////////////////////////////////////////
+
+	if(strcmp(argv[i],"configure")==0){
+		printf("argcasdasdsadasd: %d\n", i);
+		if(argc!=4){
+			printf("too little arguemnts in configure command!\n");
+			return -1;
+
+		}
+
 		int success = 0;
 		//write the configure file
-		success =configure(argv[i],argv[i+1]);
+		success =configure(argv[i+1],argv[i+2]);
 
 		if(success ==1){
 			printf("configure command was completed successfully\n");
@@ -595,15 +1190,19 @@ for(int i=0; i<argc;i++){
 		
 		
 			break;
+	/////////////////////////////////////////create///////////////////////////////////////////////////////////////////////////////////
 	}
 	else if(strcmp(argv[i],"create")==0){
-		printf("herereere\n\n\n\n\n");
-		Create =1;
-		continue;
-	}//this means that create was called
-	else if(Create ==1 ){
-		
-printf("herereere\n\n\n\n\n");
+
+		if(argc<3){
+			printf("Too few arguements create command failed\n");
+			return -1;
+		}
+		else if(argc>3){
+			printf("Too mant arguements create command failed\n");
+			return -1;
+		}
+
 		//this will call the findconfig method which returns and int of 1 if found or  -1 if not found
 		//checks the directory to see if the config file was found
 		int success =findConfig();
@@ -631,10 +1230,10 @@ printf("herereere\n\n\n\n\n");
 			pass is the file descriptor that got passed through from the tryConnect() method
 
 		*/
-		char * command =(char*) malloc(sizeof(argv[i-1])+1);
+		char * command =(char*) malloc(sizeof(argv[i])+1);
 		command ="create:";
-		char * project_name =(char*) malloc(sizeof(argv[i])+1);
-		strcpy(project_name,argv[i]);
+		char * project_name =(char*) malloc(sizeof(argv[i+1])+1);
+		strcpy(project_name,argv[i+1]);
 		strcat(project_name,":");
 		//sends command to server
 		sendtoServer(pass, command);
@@ -643,10 +1242,22 @@ printf("herereere\n\n\n\n\n");
 
 		
 		int valread=0; // return the bytes read after read is called
-		printf("HERE 1 %s:\n",argv[i]);
 
-		recieveFilefromServer(pass , argv[i]);
-		printf("HERE 2:\n");
+
+		int File_Success =recieveFilefromServer(pass , argv[i+1]);
+
+		/*
+			if the recieveFilefromServver returns a -1 this means that the project folder is already
+			found in the server
+		*/
+
+		if(File_Success==-1){
+			printf("Create command has failed, Project folder already exists or failed to Create folder!\n");
+		}
+		else if(File_Success ==1){
+			printf("Create command was successfully executed!\n");
+		}
+	
 
 		
 			
@@ -659,13 +1270,41 @@ printf("herereere\n\n\n\n\n");
 			printf("ERROR! Configure command was not called before this command!\n");
 			return -1;
 		}
-	
-	}
-	else if(strcmp(argv[i],"destroy")==0){
-		Destroy_call =1;
-	}
-	else if(Destroy_call==1){
+		
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/////////////////////////////////////////////destroy///////////////////////////////////////////////////////////////////
+
+	}//this means that create was called
+	else if(strcmp(argv[i],"destroy")==0){
+
+		if(argc<3){
+			printf("Too few arguements create command failed\n");
+			return -1;
+		}
+		else if(argc>3){
+			printf("Too many arguements create command failed\n");
+			return -1;
+		}
+		
 		//this will call the findconfig method which returns and int of 1 if found or  -1 if not found
 		//checks the directory to see if the config file was found
 		int success =findConfig();
@@ -688,36 +1327,21 @@ printf("herereere\n\n\n\n\n");
 
 		}
 
-		char * command =(char*) malloc(sizeof(argv[i+1])+3);
+		char * command =(char*) malloc(sizeof(argv[i])+1);
 		command ="destroy:";
 
-		char * project_name =(char*) malloc(sizeof(argv[i+1])+3);
-		project_name = argv[i+1];
+		char * project_name =(char*) malloc(sizeof(argv[i+1])+1);
+		
+		strcpy(project_name,argv[i+1]);
 		strcat(project_name,":");
 
 		sendtoServer(pass,command);
 		sendtoServer(pass, project_name);
 
-		
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+		//still need to read from file to make sure project was destroyed\
+		//sending me "Deleted"
+		//sending "failed" when project name doesnt exists
 
 
 	
@@ -727,6 +1351,79 @@ printf("herereere\n\n\n\n\n");
 			return -1;
 		}
 		
+
+
+///////////////////////////////////////add///////////////////////////////////////////////////////////////////////////////////////////////
+
+	}
+	else if(strcmp(argv[i],"add")==0){
+		/*
+		If the file doesn’t exist in the manifest, add the new entry to the manifest.
+		If it already does, output a warning saying that the file already exists. 
+		You can tag the file entry in the manifest with “M” letting you know later that it was 
+		modfied. But you dont change the hash or anything.
+		
+		*/
+		if(argc>4){
+			printf("Too many arguements, add command failed!\n");
+			return -1;
+		}
+		else if(argc<4){
+			printf("Too few arguements, add command failed!\n");
+			return -1;
+		}
+		int success =0;
+		success =add(argv[i+1],argv[i+2]);
+		if(success== -1){
+			printf("Add command has failed!\n");
+			return -1;
+		}
+		else if( success == 1){
+			printf("Add command has been completed!\n");
+			return 1;
+		}
+		
+
+
+	}////////////////////////////////////////////////////////////////remove////////////////////////////////////////////////////////////////////////////////
+	else if(strcmp(argv[i],"remove")==0){
+
+		if(argc>4){
+			printf("Too many arguements, add command failed!\n");
+			return -1;
+		}
+		else if(argc<4){
+			printf("Too few arguements, add command failed!\n");
+			return -1;
+		}
+
+		int success =0;
+		success = Remove_Manifest(argv[i+1],argv[i+2]);
+
+
+		if(success == 1){
+			printf("The remove command has been completed\n");
+			return -1;
+
+		}
+		else if(success == -1){
+			printf("The remove command has failed!\n");
+			return -1;
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 	}
