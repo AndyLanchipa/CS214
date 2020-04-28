@@ -32,6 +32,8 @@ int bytes_to_off = 0;
 
 int at_path = 0;
 
+int removefound =0; //if this is equal to 1 then that means that we have encountered a R so that entry doesnt exist
+
 int eof = 10; // this will be to detect the end of the file
 
 char * Current_word = (char *) malloc(sizeof(char));
@@ -57,6 +59,11 @@ if (eof == 0){
 		if(strcmp(Buffer," ")==0 || strcmp(Buffer,"\n")==0){
 			printf("CurrentWord=:%s \n",Current_word);
 
+			if(strcmp(Current_word,"R")==0){
+				removefound++;
+
+			}
+
 			at_path++;//tells me where current path is
 			if(strcmp(Buffer,"\n")==0){
 
@@ -72,6 +79,13 @@ if (eof == 0){
 			}
 
 			if(at_path == 3 && strcmp(Current_word,path)==0){
+
+				if(removefound ==1){
+					printf("Entry not found in the .Manifest file!\n");
+					return -1;
+				}
+
+
 				printf("here at path\n\n\n\n\n\n");
 				lseek(fd,(-1*bytes_to_off),SEEK_CUR);
 
@@ -91,6 +105,7 @@ if (eof == 0){
 
 			}//this means that we are at the file path and the paths dont equal so reset current word
 			else if(at_path == 3 && strcmp(Current_word,path)!=0){
+				removefound =0;
 
 				Current_word =NULL;
 				Current_word = (char*) malloc(sizeof(char));
@@ -581,29 +596,8 @@ int update = updateManifest(pfd,md5,Full_path);
 
 
 
-
-
-
-	
-
-
-
-
-
-
 	return update;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1108,46 +1102,7 @@ printf("before while looop\n\n\n\n");
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /////////////////////////////////////////////////////Destroy method/////////////////////////////////////////////////////////////////////////
-
-
-
-
-
 
 
 
@@ -1259,10 +1214,6 @@ for(int i=0; i<argc;i++){
 		}
 	
 
-		
-			
-
-
 			break;
 
 		}
@@ -1271,24 +1222,6 @@ for(int i=0; i<argc;i++){
 			return -1;
 		}
 		
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /////////////////////////////////////////////destroy///////////////////////////////////////////////////////////////////
@@ -1410,19 +1343,6 @@ for(int i=0; i<argc;i++){
 			printf("The remove command has failed!\n");
 			return -1;
 		}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
