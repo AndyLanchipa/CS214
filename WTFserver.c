@@ -16,6 +16,7 @@
 
 typedef struct filesInManifest {	//used to make a linked list of files in the .Manifest file
 	char *filePath;
+	char *version;
 	struct filesInManifest *next;
 } FIM;
 
@@ -30,7 +31,7 @@ FIM *FIMconstructor(char *newPath){	//creates a node for FIM LL
 void printLL(FIM *head){ //prints linked list
 	FIM *ptr = head; 
 	while (ptr != NULL){
-		printf("%s\n", ptr->filePath);
+		printf("%s\n", ptr->version);
 		ptr = ptr->next;
 	}
 }
@@ -64,6 +65,7 @@ FIM *manifestPathsLL(int fd){
 			break;
 		}
 
+
 		if (spaceCount == 1){
 			if (currentWord == NULL){
 				currentWord = readBuffer;
@@ -88,18 +90,113 @@ FIM *manifestPathsLL(int fd){
 				}
 			}
 		}
+
 		if (strcmp(readBuffer, "\n") == 0){	//when a new line is encountered 
 			spaceCount = 0;
 		}
-		
-
-
 	}
-	
 	
 	return head; 
 }
 
+int getProjectVersion(int fd){	//get the version of the project from the .Manifest file
+	int exit = 0; 
+	char *versionHolder = NULL;
+	int eof = -1;
+
+	while(exit == 0){
+		char *readBuffer = (char *)malloc(sizeof(char));
+		eof = read(fd, readBuffer, 1);
+
+		if (strcmp(readBuffer, "\n") == 0){
+			break;
+		}
+		else {
+			if (versionHolder == NULL){
+				versionHolder = readBuffer; 
+			}
+			else {
+				strcat(versionHolder, readBuffer);
+			}
+		}
+	}
+	int version = atoi(versionHolder);
+	
+	return version;
+}
+
+FIM *manifestVandPLL(int fd){	//get the versions and the filepaths into a linked list
+	int eof = -1; 
+	int spaceCount = 0;
+	char *currentWord = NULL;
+	char *currentvWord = NULL;
+
+	FIM *head = NULL;
+	FIM *ptr = head; 
+
+
+	while (eof != 0){
+		char *readBuffer = (char *)malloc(sizeof(char));
+		eof = read(fd, readBuffer, 1);
+
+		if (eof == 0){
+			break;
+		}
+
+
+		if (spaceCount == 1){
+			if (currentWord == NULL){
+				currentWord = readBuffer;
+			}
+			else {
+				strcat(currentWord, readBuffer);
+			}
+		}
+		else if (spaceCount == 0) {
+			if (currentvWord == NULL){
+				currentvWord = readBuffer;
+			}
+			else {
+				strcat(currentvWord, readBuffer);
+			}
+		}
+
+		if (strcmp(readBuffer, " ") == 0){
+			spaceCount++;
+			if (spaceCount == 2){
+				if (head == NULL){
+					head = FIMconstructor(currentWord);
+					currentvWord[strlen(currentvWord)-1] = '\0';
+					printf("currentvWord = %sd\n", currentvWord);
+					head->version = (char *)malloc(strlen(currentvWord) * sizeof(char));
+					strcpy(head->version, currentvWord);
+					printf("ptr->version == %s\n", head->version);
+					ptr = head;
+					currentWord = NULL;
+					currentvWord = NULL;
+				}
+				else {
+					ptr->next = FIMconstructor(currentWord);
+					currentvWord[strlen(currentvWord)-1] = '\0';
+					printf("currentvWord = %sd\n", currentvWord);
+					ptr->next->version = (char *)malloc(strlen(currentvWord) * sizeof(char));
+					strcpy(ptr->next->version, currentvWord);
+					printf("ptr->version == %s\n", ptr->version);
+					ptr = ptr->next;
+					currentWord = NULL;
+					currentvWord = NULL;
+				}
+			}
+		}
+
+		if (strcmp(readBuffer, "\n") == 0){	//when a new line is encountered 
+			spaceCount = 0;
+			currentvWord = NULL;
+		}
+	}
+	
+	return head; 
+}
 
 char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
 
@@ -262,6 +359,7 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
 		char *sendSF = "sendfile:1:";
 		senderr = send(clientSocket, sendSF, strlen(sendSF), 0);
+		printf("projectPath = %s\n\n", projectPath);
 		senderr = sendTheFiles(clientSocket, projectPath);
 		
 	}
@@ -438,21 +536,189 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 		strcat(sendsucc, nOfFiles);
 		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
 
-		senderr = sendTheFiles(clientSocket, manifestName);
+		senderr = sendTheFiles(clientSocket, manifestName);	//send the manifest file
+		printf("manifestName = %s\n", manifestName);
 
 		FIM *ptr = head;
 		
-		while (ptr != NULL){
+		while (ptr != NULL){	// send the files 
+			printf("ptr->filePath = %slol\n", ptr->filePath);
+			ptr->filePath[strlen(ptr->filePath)-1] = '\0';
 			senderr = sendTheFiles(clientSocket, ptr->filePath);
 			ptr = ptr->next;
 		}
-		
 
-		printLL(head);
+		ptr = head;
+		while (ptr != NULL){	//free all the nodes in the LL 
+			ptr = ptr->next;
+			free(head->filePath);
+			free(head);
+			head = ptr;
+		}
+		
 
 		close(manifestFD);
 	}
 
+	return NULL;
+}
+
+void *updateThread(void *ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Update Call: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		char *cwd = "./";
+		char *mantemp = "/.Manifest";
+		char *manifestName = (char *)malloc((strlen(cwd) + strlen(mantemp) + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, cwd);
+		strcat(manifestName, ProjName);
+		strcat(manifestName, mantemp);
+
+
+		char *sendsucc = (char *)malloc((strlen("sendfile:1:")) * sizeof(char));
+		strcpy(sendsucc, "sendfile:1:");
+		
+		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
+		senderr = sendTheFiles(clientSocket, manifestName);
+	}
+	return NULL;
+}
+
+void *currentversionThread(void * ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Getting current of: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		char *cwd = "./";
+		char *mantemp = "/.Manifest";
+		char *manifestName = (char *)malloc((strlen(cwd) + strlen(mantemp) + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, cwd);
+		strcat(manifestName, ProjName);
+		strcat(manifestName, mantemp);
+
+		FIM *head = NULL;
+
+
+		int manifestFD = open(manifestName, O_RDONLY);
+		int version = getProjectVersion(manifestFD);	//get the version # of the project
+		printf("version == %d\n", version);
+		close(manifestFD);
+
+		manifestFD = open(manifestName, O_RDONLY);	//get linked list of paths and version numbers
+		head = manifestVandPLL(manifestFD);
+		close(manifestFD);
+
+		int fiml = FIMlen(head);
+		char *noOfFiles = (char *)malloc(40 * sizeof(char *));	//send number of files
+		sprintf(noOfFiles, "%d:", fiml);
+		
+
+		char *ProjVersion = (char *)malloc(40 * sizeof(char *));	//send version for the whole project 
+		sprintf(ProjVersion, "%d:", version);
+
+		char *sendsucc = (char *)malloc((strlen("versions:") + strlen(noOfFiles) + strlen(ProjVersion)) * sizeof(char));	//sends -- versions:(# of files):
+		strcpy(sendsucc, "versions:");
+		strcat(sendsucc, noOfFiles);
+		strcat(sendsucc, ProjVersion);
+		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
+
+
+		FIM *ptr = head;
+		while (ptr != NULL){	//sends -- (length of filepath):(version):(filepath):
+			printf("ptr->filePath = %slol\n", ptr->filePath);
+			ptr->filePath[strlen(ptr->filePath)-1] = '\0';
+			printf("ptr->filePath = %slol\n", ptr->filePath);
+
+			char *fileNameSize = (char *)malloc((1 + strlen(ptr->filePath)) * sizeof(char));//send the file name size
+			sprintf(fileNameSize, "%d:", (int)strlen(ptr->filePath));
+			senderr = send(clientSocket, fileNameSize, strlen(fileNameSize), 0);
+
+			senderr = send(clientSocket, ptr->version, strlen(ptr->version), 0);	//send the version 
+			senderr = send(clientSocket, ":", strlen(":"), 0);	//send colon
+			senderr = send(clientSocket, ptr->filePath, strlen(ptr->filePath), 0); //send filepath
+			senderr = send(clientSocket, ":", strlen(":"), 0);
+
+			free(fileNameSize);
+			ptr = ptr->next;
+		}
+
+		ptr = head;
+		while (ptr != NULL){	//free all the nodes in the LL 
+			ptr = ptr->next;
+			free(head->filePath);
+			free(head->version);
+			free(head);
+			head = ptr;
+		}
+
+
+
+		printLL(head);
+
+	}
 	return NULL;
 }
 
@@ -550,6 +816,11 @@ int main(int argc, char *argv[]){
 		}
 		else if (strcmp(command, "update") == 0){
 
+			pthread_t updateT;
+			int *updateClient = (int *)malloc(sizeof(int));
+			*updateClient = ClientSocketfd;
+			pthread_create(&updateT, NULL, updateThread, updateClient);
+
 		}
 		else if (strcmp(command, "upgrade") == 0){
 
@@ -575,6 +846,11 @@ int main(int argc, char *argv[]){
 			pthread_create(&destroyT, NULL, destroyThread, destroyClient);
 		}
 		else if (strcmp(command, "currentversion") == 0){
+
+			pthread_t currentversionT;
+			int *currentversionClient = (int *)malloc(sizeof(int));
+			*currentversionClient = ClientSocketfd;
+			pthread_create(&currentversionT, NULL, currentversionThread, currentversionClient);
 
 		}
 		else if (strcmp(command, "history") == 0){
