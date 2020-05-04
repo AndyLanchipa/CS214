@@ -17,6 +17,7 @@
 typedef struct filesInManifest {	//used to make a linked list of files in the .Manifest file
 	char *filePath;
 	char *version;
+	char *nameLen;
 	struct filesInManifest *next;
 } FIM;
 
@@ -284,7 +285,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 		return -1;
 	}
 
-	senderr = send(clientFD, sendFilecontentsLen, strlen(sendFilecontentsLen), 0); /////send the # of chars in the file)
+	senderr = send(clientFD, sendFilecontentsLen, strlen(sendFilecontentsLen), 0); /////send the # of chars in the file
 	if (senderr < 0){
 		return -1;
 	}
@@ -722,6 +723,185 @@ void *currentversionThread(void * ptr_clientSocket){
 	return NULL;
 }
 
+void *commitThread(void * ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Commit for: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		char *cwd = "./";
+		char *mantemp = "/.Manifest";
+		char *manifestName = (char *)malloc((strlen(cwd) + strlen(mantemp) + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, cwd);
+		strcat(manifestName, ProjName);
+		strcat(manifestName, mantemp);
+
+		senderr = send(clientSocket, "sendfile:1:", strlen("sendfile:1:"), 0);
+		senderr = sendTheFiles(clientSocket, manifestName);
+
+		//after the manifest file is sent, recieve the .commit file
+		char *recvFileBuff = (char *)malloc(strlen("sendfile:1:") * sizeof(char));
+		recv(clientSocket, recvFileBuff, strlen("sendfile:1:"), 0);
+
+		if (strstr(recvFileBuff, "Failed") != NULL){	//if there is an error on the client side it will return "Failed"
+			return NULL;	//then end the thread
+		}
+
+		char *fileNameLen = (char *)malloc(strlen(50) * sizeof(char));
+		char *fileSize = (char *)malloc(strlen(100) * sizeof(char));
+		char *commitFileName = (char *)malloc(atoi(fileNameLen) * sizeof(char));
+		char *commitFileBytes = (char *)malloc(atoi(fileSize) * sizeof(char));
+
+		strcpy(fileNameLen, readToColon(clientSocket));		
+		strcpy(fileSize, readToColon(clientSocket));
+
+		recv(clientSocket, commitFileName, atoi(fileNameLen), 0);	//commitFileName contains the path for the .Commit file
+		recv(clientSocket, commitFileBytes, atoi(fileSize), 0);		//commitFileBytes contains the bytes in the .Commit file
+
+		int commitFD = open(commitFileBytes, O_RDWR);
+		int writeErr;
+		if (commitFD < 0) {
+			commitFD = creat(commitFileName, O_RDWR);//*************figure out how to lock projects 
+
+			writeErr = write(commitFD, commitFileBytes, atoi(fileSize));
+		}
+		else {
+			writeErr = lseek(commitFD, 0, SEEK_END);
+			writeErr = write(commitFD, commitFileBytes, atoi(fileSize));
+		}
+		
+		writeErr = write(commitFD, "\n\n", strlen("\n\n"));
+		close(commitFD);
+
+	}
+	return NULL;
+}
+
+void *upgradeThread(void *ptr_clientSocket){
+
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Upgrading Client: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		//read to first colon... if == Failed: then return NULL
+		char *readcommand = (char *)malloc(strlen("sendfile") * sizeof(char));
+		strcpy(readcommand, readToColon(clientSocket));
+
+		if (strstr(readcommand, "Failed") != NULL){
+			return NULL;
+		}
+		//if == sendfile: then next readToColon will give number of files needed
+		char *str_noOfFiles = (char *)malloc(30 * sizeof(char));
+		strcpy(str_noOfFiles, readToColon(clientSocket));
+		
+		int noOfFiles = atoi(str_noOfFiles);
+
+
+		FIM *head = NULL; 
+		FIM *ptr = head; 
+		int nameLen;
+		int readerr;
+		for (int i; i < noOfFiles; i++){	//read the files that are needed and put them into the Linked List 
+
+			char *str_nameLen = (char *)malloc(30 * sizeof(char));
+			strcpy(str_nameLen, readToColon(clientSocket));	//get the name length as a string
+			nameLen = atoi(str_nameLen);	//turn name length into an int
+			
+			if (head == NULL){	// create head node
+				head = FIMconstructor(readToColon(clientSocket));
+				ptr = head;
+			}
+			else {	//create the next node in the list
+				ptr->next = FIMconstructor(readToColon(clientSocket));
+				ptr = ptr->next;
+			}
+			
+			free(str_nameLen);
+		}
+
+		
+		char *sendsucc = (char *)malloc((strlen("sendfile:") + strlen(str_noOfFiles) + strlen(":")) * sizeof(char));
+		strcpy(sendsucc, "sendfile:");
+		strcat(sendsucc, str_noOfFiles);
+		strcat(sendsucc, ":");
+
+		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
+
+		ptr = head;
+		for (int i; i < noOfFiles; i++){
+
+			senderr = sendTheFiles(clientSocket, ptr->filePath);   //send the files that were requested
+			ptr = ptr->next;
+		}
+	}
+
+
+
+	return NULL;
+}
+
+
 void sighandler(int val){
 	printf("Signal caught: %d, Server turning off.\n", val);
 	
@@ -824,12 +1004,22 @@ int main(int argc, char *argv[]){
 		}
 		else if (strcmp(command, "upgrade") == 0){
 
+			pthread_t upgradeT;
+			int *upgradeClient = (int *)malloc(sizeof(int));
+			*upgradeClient = ClientSocketfd;
+			pthread_create(&upgradeT, NULL, upgradeThread, upgradeClient);
+
 		}
 		else if (strcmp(command, "commit") == 0){
 
+			pthread_t commitT;
+			int *commitClient = (int *)malloc(sizeof(int));
+			*commitClient = ClientSocketfd;
+			pthread_create(&commitT, NULL, commitThread, commitClient);
+
 		}
 		else if (strcmp(command, "push") == 0){
-
+			
 		}
 		else if (strcmp(command, "create") == 0){	//calls the create function
 
