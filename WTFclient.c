@@ -22,7 +22,40 @@ void sendtoServer(int fd , char*to_Send){
 		send(fd , to_Send , strlen(to_Send) , 0 );// the command name for the server to process and read
 	
 
+
 }
+
+char * readtocolon(int fd){
+	char * Buffer = (char*) malloc(sizeof(char));
+	char * Word = (char *) malloc(sizeof(char));
+	int bytes= 0;
+
+	while(strcmp(Buffer,":")!=0){
+		bytes=  read(fd,Buffer,1);
+		if(bytes== -1){
+			printf("Could not read from server!\n");
+		}
+
+
+
+
+		strcat(Word, Buffer);
+
+
+
+
+	}
+
+	return Word;
+
+
+
+}
+
+
+
+
+
 
 const char * MD5transform(int fd , int size ){
 	unsigned char digest[16];
@@ -53,6 +86,59 @@ const char * MD5transform(int fd , int size ){
 
 
 }
+//////////////////////////////////////////////////////////////////////Push method/////////////////////////////////////////////////////////////////////////////////////////////////
+
+int sendFile(int fd ,int sockfd ,char * File_path){
+
+
+		struct stat std;
+		stat(File_path, &std);
+
+		int sizeto;
+		if(stat(File_path,&std)== 0){
+
+			sizeto = (int)std.st_size;
+		}
+		//sendfile:(number of files):(file name length):(filename):(file name length):(filename): and so on
+		sendtoServer(sockfd,"sendfile:");
+		sendtoServer(sockfd ,"1:");
+		int commit_l =strlen(File_path);
+		int digits = floor(log10(abs(commit_l)))+1;
+		char * charsname = (char *) malloc(sizeof(char) *digits+strlen(":")+1);
+				sprintf(charsname,"%d",commit_l);
+			strcat(charsname,":");
+
+		sendtoServer(sockfd,charsname);
+		strcat(File_path,":");
+		sendtoServer(sockfd, File_path);
+		digits =floor(log10(abs(sizeto)))+1;
+		 charsname = (char *) malloc(sizeof(char) *digits+strlen(":")+1);
+			sprintf(charsname,"%d",sizeto);
+			strcat(charsname,":");
+
+		sendtoServer(sockfd,charsname);
+
+		char *contentsinfile = (char*) malloc(sizeto);// allocate for size of commit file
+		int bytes =read(fd,contentsinfile,sizeto);
+		if(bytes == -1){
+			printf("could not read from .Commit file!\n");
+		}
+		sendtoServer(sockfd, contentsinfile);
+		sendtoServer(sockfd,":");
+
+		return 1;
+
+
+}
+
+
+
+
+
+
+
+
+
 //////////////////////////////////////////////////////////////Commit method//////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -541,12 +627,12 @@ DIR * dir = opendir(Project_Folder);
 
 	}
 	else if( ENOENT == errno){
-		printf("Project folder does not exist, update command failed!\n");
+		printf("Project folder does not exist, Commit command failed!\n");
 		return -1;
 
 	}
 	else if(dir == NULL){
-		printf("Project directory could not be opened, update command failed!\n");
+		printf("Project directory could not be opened, commit command failed!\n");
 		return -1;
 	}
 
@@ -705,6 +791,9 @@ if(strcmp(VersionClient,VersionServer) != 0){
 else if(strcmp(VersionClient,VersionServer) == 0){
 
 	strcat(Project_Folder,"/.Commit");// Project folder holds ./Project/.Commit
+	//check if .Commit exists if it does then lseek to the end of it
+	int try = open(Project_Folder , O_RDWR);
+	if(try == -1){ //folder was not found so we make it
 	//create the .Commit file
 
 	bytes = creat(Project_Folder, S_IRWXU); //this makes the file
@@ -723,6 +812,23 @@ else if(strcmp(VersionClient,VersionServer) == 0){
 
 
 	}
+
+
+
+	}
+	else{
+
+		lseek(Commit_fd,0,SEEK_END); // seek to end of the file and start writing from there
+
+	}
+
+
+
+
+
+
+
+	
 	
 
 }
@@ -2339,7 +2445,7 @@ for(int i=0; i<argc;i++){
 			printf("The Destroy Command has been successfully executed!\n");
 			break;
 		}
-		else if(strcmp(D, "Deleted")==0){
+		else if(strcmp(D, "Deleted")!=0){
 			printf("The Destroy command has failed to execute because the project does not exist on the server!");
 			return -1;
 		}
@@ -2574,7 +2680,7 @@ else if(strcmp(argv[i],"commit")==0){
 
 //need too
 if(argc<3){
-			printf("Too few arguements update command failed\n");
+			printf("Too few arguements Commit command failed\n");
 			return -1;
 		}
 		else if(argc>3){
@@ -2613,34 +2719,97 @@ if(argc<3){
 		sendtoServer(pass, project_name);
 
 		//checking to see if .update files exist and are empty same with conflict files
+		char * updatefound = (char*) malloc(strlen("./")+strlen(project_name) +strlen("/.Update")+1);
+		char * Conflictfound = (char*) malloc(strlen("./")+strlen(project_name) +strlen("/.Conflict")+1);
+
+		strcat(updatefound , "./");
+		strcat(updatefound,project_name);
+		strcat(updatefound , "/");
+		strcat(updatefound,"/.Update");
 
 
-		int success = Commit_Method( pass, project_name);
+		strcat(Conflictfound , "./");
+		strcat(Conflictfound,project_name);
+		strcat(Conflictfound , "/");
+		strcat(Conflictfound,"/.Conflict");
+
+		int Ufd = open(updatefound, O_RDWR); 
+
+		if(Ufd!=-1){
+			//means this .update file exists we now check the size of it
+		//getting the size of the client manifest file in bytes
+
+			struct stat st;
+			stat(updatefound,&st);
+
+ 			int size;
+ 
+  			if (stat(updatefound, &st) == 0) {
+
+        		size = (int)st.st_size;
+	
+			}
+			if(size <= 1){
+				printf(".Upadate file is empty!\n");
+			}
+			else if(size>1){
+				printf(".Update file found that is not empty!\n");
+				printf("The commit command has failed!\n");
+				close(Ufd);
+				return -1;
+
+
+			}
+
+		}
+
+
+		int Cfd = open(Conflictfound, O_RDWR);
+
+		if(Cfd!=-1){
+			//means this .update file exists we now check the size of it
+		//getting the size of the client manifest file in bytes
+
+			struct stat st;
+			stat(Conflictfound,&st);
+
+ 			int size;
+ 
+  			if (stat(Conflictfound, &st) == 0) {
+
+        		size = (int)st.st_size;
+	
+			}
+			if(size <= 1){
+				printf(".Conflict file is empty!\n");
+			}
+			else if(size>1){
+				printf(".Conflict file found that is not empty!\n");
+				printf("The commit command has failed!\n");
+				close(Cfd);
+				return -1;
+
+
+			}
+
+		}
+		close(Cfd);
+		close(Ufd);
+
+		int successto = Commit_Method( pass, project_name);
+
+		
+
+
+		// //should read success from server to know that server successfully completed
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		if(success == -1){
+		if(successto == -1){
 			printf("The commit command has failed!\n");
 			return -1;
 		}
-		else if(success == 1){
+		else if(successto == 1){
 
 			printf("The commit command was successful!\n");
 			return 0;
@@ -2667,30 +2836,144 @@ if(argc<3){
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	
 }
+else if(strcmp(argv[i],"push")==0){
+
+	//need too
+if(argc<3){
+			printf("Too few arguements push command failed\n");
+			return -1;
+		}
+		else if(argc>3){
+			printf("Too many arguements push command failed\n");
+			return -1;
+		}
+
+		//this will call the findconfig method which returns and int of 1 if found or  -1 if not found
+		//checks the directory to see if the config file was found
+		int success =findConfig();
+
+		if(success ==1){
+			printf("herereerein\n\n\n\n\n");
+		int pass =GetIandP();
+		
+		/*
+			this means that the tryConnect() method has failed to connect to the server so we 
+			will return a -1 and end the program
+		*/
+		if(pass == -1){
+			return -1;
+
+			}
+
+			//edit recieve files method to also create subfolders if necessary
+		char * command =(char*) malloc(strlen(argv[i])+1 +strlen(":"));
+		command ="push:";
+
+		char * project_name =(char*) malloc(strlen(argv[i+1])+1 +strlen(":"));
+		
+		
+		strcpy(project_name,argv[i+1]);
+		strcat(project_name,":");
+
+		sendtoServer(pass,command);
+		sendtoServer(pass, project_name);
+
+		char * CommitFile_Path = (char *) malloc(strlen("./")+strlen(project_name)+strlen("/.Commit"));
+		strcat(CommitFile_Path ,"/");
+		strcat(CommitFile_Path , project_name);
+		strcat(CommitFile_Path , "/.Commit");
+
+		int fd = open(CommitFile_Path,O_RDONLY);
+		if(fd == -1){
+
+			printf("The .Commit file does not exist!\n");
+			return -1;
+		}
+		close(fd);
+		char *Project_Folder = (char*) malloc(strlen("./")+strlen(argv[i+1])+1);
+		project_name = (char*) malloc(strlen(argv[i+1]));
+		strcpy(project_name ,argv[i+1]);
+		Project_Folder = "./";
+strcat(Project_Folder,roject_name);
+DIR * dir = opendir(Project_Folder);
+
+
+	if(dir){
+
+		//directory exists
+		
+		closedir(dir);
+	
+
+	}
+	else if( ENOENT == errno){
+		printf("Project folder does not exist, Push command failed!\n");
+		return -1;
+
+	}
+	else if(dir == NULL){
+		printf("Project directory could not be opened, Push command failed!\n");
+		return -1;
+	}
+
+
+
+
+
+
+
+
+
+
+		int sent = sendFile(fd,pass, CommitFile_Path);
+
+		char *ForP = (char*) malloc(strlen("Success:")+1);
+
+		ForP= readtocolon(pass);
+//////////////////////// these if statements to see if the push command succeeded
+		if(strcmp(ForP,"Success") == 0){
+
+
+			printf("Servers Push command executed successfully\n");
+
+			int status = remove(CommitFile_Path);//Project file has path to file
+					if(status == -1){
+					printf("failed to delete .Commit from project folder!\n");
+					return -1;
+					}
+			printf(".Commit File was delete from project folder\n");
+			
+			return 0;
+
+		}
+		else if(strcmp("Faliure", ForP)== 0){
+				printf("Servers Push command failed\n");
+			
+				int status = remove(CommitFile_Path);//Project file has path to file
+					if(status == -1){
+					printf("failed to delete .Commit from project folder!\n");
+					return -1;
+					}
+						printf(".Commit File was delete from project folder\n");
+						return -1;
+
+
+
+		}
+
+		}
+		else if(success == 0){
+		printf("ERROR! Configure command was not called before this command!\n");
+			return -1;
+
+	}
+
+
+
+}
+else if()
 
  
 
