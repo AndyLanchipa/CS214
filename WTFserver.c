@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+pthread_mutex_t lock;
 
 typedef struct filesInManifest {	//used to make a linked list of files in the .Manifest file
 	char *filePath;
@@ -496,7 +497,7 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		}
 
 		strcat(projectPath, "/.Manifest");
-		int manifest = creat(projectPath, S_IRWXU);	//create the .Manifest file for the project
+		int manifest = creat(projectPath, O_RDWR);	//create the .Manifest file for the project
 		if (manifest < 0){
 			printf(".Manifest file could not be created\n");
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
@@ -532,6 +533,7 @@ void destroyDirectory(char *projName){
 
 	while ((fileptr = readdir(directory)) != NULL){
 		if (strcmp(fileptr->d_name, ".") != 0 && strcmp(fileptr->d_name, "..") != 0){
+		
 			if (fileptr->d_type == DT_DIR){
 				//recursively into directory
 				//then delete directory after it returns
@@ -542,7 +544,6 @@ void destroyDirectory(char *projName){
 				strcat(newFilePath, fileptr->d_name);
 
 				destroyDirectory(newFilePath);
-				
 				rmdir(newFilePath);
 
 				free(newFilePath);
@@ -554,7 +555,7 @@ void destroyDirectory(char *projName){
 				strcat(newFilePath, "/");
 				strcat(newFilePath, fileptr->d_name);
 
-
+				
 				unlink(newFilePath);
 
 
@@ -564,7 +565,7 @@ void destroyDirectory(char *projName){
 	}
 	closedir(directory);
 
-
+	
 }
 
 
@@ -1426,6 +1427,7 @@ void *historyThread(void *ptr_clientSocket){
 }
 
 void *rollbackThread(void *ptr_clientSocket){
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -1434,12 +1436,13 @@ void *rollbackThread(void *ptr_clientSocket){
 	char *ProjName = (char *)malloc(300 * sizeof(char));
 	strcpy(ProjName, readToColon(clientSocket));
 
-	printf("Commit for: ./%s\n", ProjName);
+	printf("rolling back: ./%s\n", ProjName);
 
 	struct dirent *dirPtr;
 	DIR *dir = opendir("./");
 	if (dir == NULL){
 		printf("Cannot open Current Working Directory\n");
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
 
@@ -1467,22 +1470,38 @@ void *rollbackThread(void *ptr_clientSocket){
 
 		strcpy(readSucc, readToColon(clientSocket));
 		strcpy(version, readToColon(clientSocket)); // version of the project to untar 
+		
 
 		//get the currentversion number so you can delete all numbers in between 
 		char *manifestName = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.Manifest")) * sizeof(char));
-		char *forDestroy = (char *)malloc((strlen("./") + strlen(ProjName)) * sizeof(char));
 		strcpy(manifestName, "./");
 		strcat(manifestName, ProjName);
-		strcpy(forDestroy, manifestName); //./ProjectName
 		strcat(manifestName, "/.Manifest");
 
+		
+		
+
 		int fd = open(manifestName, O_RDONLY);
+		
 		int currentV = getProjectVersion(fd); //get the current version
-		if (currentV == 0){
+		close(fd);
+		free(manifestName);
+		
+		if (currentV == 0 || currentV <= (atoi(version))){
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
+
+		char *forDestroy = (char *)malloc((strlen("./") + strlen(ProjName)) * sizeof(char));
+		strcpy(forDestroy, "./");
+		strcat(forDestroy, ProjName);
+
+		
 		destroyDirectory(forDestroy);	//then delete the existing project
+		rmdir(forDestroy);
+
+		
 
 		//use the system call "tar xvzf ./testProject.1.tar.gz" to unpack the tar file
 		char *sysCommand = (char *)malloc((strlen("tar xvzf ") + strlen("./") + strlen(ProjName) + strlen(".") + strlen(version) + strlen(".tar.gz")) * sizeof(char)); //holds the name of the project.tar.gz
@@ -1492,15 +1511,18 @@ void *rollbackThread(void *ptr_clientSocket){
 		strcat(sysCommand, ".");
 		strcat(sysCommand, version);
 		strcat(sysCommand, ".tar.gz");
+	
 		system(sysCommand);
 		
+
+
 		//now delete all tar file between the rolled back version and the original version
 		int rollVersion = atoi(version);
 		currentV--;
 		char *str_currentV = (char *)malloc(30 * sizeof(char));
 		sprintf(str_currentV, "%d", currentV);
 		
-		while (currentV > rollVersion){ //deletes all tar files between the rolled back version and the original version
+		while (currentV >= rollVersion){ //deletes all tar files between the rolled back version and the original version
 			char *tempV = (char *)malloc(strlen(str_currentV) * sizeof(char));
 			sprintf(tempV, "%d", currentV);
 			
@@ -1515,13 +1537,14 @@ void *rollbackThread(void *ptr_clientSocket){
 			free(tempV);
 			currentV--;
 		}
-
+		
 		char *sendsucc = (char *)malloc(strlen("success:") * sizeof(char));
+		strcpy(sendsucc, "success:");
 		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
 		
 	}
 
-
+	pthread_mutex_unlock(&lock);
 	return NULL;
 }
 
@@ -1587,6 +1610,13 @@ int main(int argc, char *argv[]){
 	char *commandResponse = "Processing Command...\n:";
 	char *incCommand = "Incorrect Command was received\n";
 
+
+
+	
+	if (pthread_mutex_init(&lock, NULL) != 0) { 
+        printf("\n mutex init has failed\n"); 
+        return 1; 
+    } 
 	
 	////////////////////////////////////////////////////////////////////////////SERVER LOOP IS HERE 
 
