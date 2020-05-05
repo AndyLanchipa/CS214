@@ -300,8 +300,153 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 		return -1;
 	}
 
+	
+
 	return 1;
 
+}
+
+char* subString (const char* input, int offset, int len, char* dest){
+  int input_len = strlen (input);
+
+  if (offset + len > input_len)
+  {
+     return NULL;
+  }
+
+  strncpy (dest, input + offset, len);
+  return dest;
+}
+
+int incrementVNum(int fd, char *manifestpath){
+	//get file size of .Commit 
+	struct stat forSize;  
+	int filesize;
+
+	
+	if (stat(manifestpath, &forSize) == 0) {
+     	filesize = (int)forSize.st_size;
+	}
+	else {
+		printf("Size could not be found\n");
+       	return -1;
+	}
+	int eof;
+	int index;
+	char *version;
+
+	for (int i = 0; i < filesize; i++){
+		char *readBuffer = (char *)malloc(sizeof(char));
+		eof = read(fd, readBuffer, 1);
+
+
+		if (strcmp(readBuffer, "\n") == 0){
+			index = i;
+			break;
+		}
+		else {
+			if (version == NULL){
+				version = readBuffer;
+			}
+			else {
+				strcat(version, readBuffer);
+			}
+		}
+	}
+	close(fd);
+	
+	int newfd = open(manifestpath, O_RDWR);
+	char *charsInManifest = (char *)malloc(filesize * sizeof(char));
+	eof = read(newfd, charsInManifest, filesize);
+	close(newfd);
+
+	char *newManifest = (char *)malloc((20 + filesize) * sizeof(char));
+	char *temp = (char *)malloc(filesize * sizeof(char));
+	subString(charsInManifest, index, filesize-index, temp);
+
+	strcpy(newManifest, version);
+	strcat(newManifest, temp);
+
+	newfd = creat(manifestpath, O_RDWR);
+	int writeErr = write(newfd, newManifest, strlen(newManifest));
+	close(newfd);
+
+
+	return 0;
+}
+
+int removeFromManifest(int fd, char *manifestpath, char *filePath){
+	//get file size of .Commit 
+	struct stat forSize;  
+	int filesize;
+	printf("commitPath = %s\n", manifestpath);
+	if (stat(manifestpath, &forSize) == 0) {
+       	filesize = (int)forSize.st_size;
+	}
+   	else {
+		printf("Size could not be found\n");
+       	return -1;
+	}
+
+	//get the bytes from the file into a string 
+	char *charsInManifest = (char *)malloc((1 + filesize) * sizeof(char));
+	int readErr = read(fd, charsInManifest, filesize);
+	close(fd);
+
+	char *tempfilePath = (char *)malloc(strlen(filePath) * sizeof(char));
+	int startIndex;
+	int endIndex;
+	int nameCount; 
+	int spaceCount = 0; 
+	for (int i = 0; i < strlen(charsInManifest); i++){
+		if (charsInManifest[i] == '\n'){
+			startIndex = i + 1;
+			nameCount = 0;
+			spaceCount = 0;
+		}
+		if (spaceCount == 1 && charsInManifest[i] != ' ' && nameCount < (int)strlen(filePath)){
+			tempfilePath[nameCount] = charsInManifest[i];
+			nameCount++;
+		}
+		if (charsInManifest[i] == ' '){
+			if (strcmp(tempfilePath, filePath) == 0){
+				while (charsInManifest[i] != '\n'){
+					endIndex = i + 1;
+					i++;
+				}
+				break;
+			}
+			spaceCount++;
+		}
+		
+	}
+
+
+	char *firstPart = (char *)malloc(strlen(charsInManifest) * sizeof(char));
+	char *secondPart = (char *)malloc(strlen(charsInManifest) * sizeof(char));
+
+	if (endIndex == strlen(charsInManifest) - 1){
+		subString(charsInManifest, 0, startIndex, firstPart);
+	}
+	else {
+		subString(charsInManifest, 0, startIndex + 1, firstPart);
+		subString(charsInManifest, endIndex, (strlen(charsInManifest) - endIndex), secondPart);
+		strcat(firstPart, secondPart);
+	}
+
+	int newfd = creat(manifestpath, O_RDWR);
+	int writeErr = write(newfd, firstPart, strlen(firstPart));
+	close(newfd);
+
+
+	free(charsInManifest);
+	free(tempfilePath);
+	free(firstPart);
+	free(secondPart);
+
+
+
+	return 0;
 }
 
 void *createThread(void *ptr_clientSocket){	//thread used to handle a create function call from client
@@ -332,7 +477,9 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 1){	//if project is in the directory, then send an error since the project already exists
@@ -363,7 +510,10 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		printf("projectPath = %s\n\n", projectPath);
 		senderr = sendTheFiles(clientSocket, projectPath);
 		
+
 	}
+
+	
 
 	return NULL;
 }
@@ -449,7 +599,8 @@ void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy
 
 	closedir(dir);
 
-	char *sendFail = "Failed:";
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	char *sendSucc = "Deleted:";
 
 	if (projFound == 0) {
@@ -465,7 +616,13 @@ void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy
 		destroyDirectory(projName);
 		rmdir(projName);
 		send(clientSocket, sendSucc, strlen(sendSucc), 0);
+
+		
 	}
+
+
+	
+	
 
 	return NULL;
 }
@@ -499,7 +656,9 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+	
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
@@ -509,12 +668,11 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 	else {
 		printf("project exists\n");
 
-		char *cwd = "./";
-		char *mantemp = "/.Manifest";
-		char *manifestName = (char *)malloc((strlen(cwd) + strlen(mantemp) + strlen(ProjName)) * sizeof(char));
-		strcpy(manifestName, cwd);
+		
+		char *manifestName = (char *)malloc((strlen("./") + strlen("/.Manifest") + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, "./");
 		strcat(manifestName, ProjName);
-		strcat(manifestName, mantemp);
+		strcat(manifestName, "/.Manifest");
 
 		printf("manifest path = %s\n", manifestName);
 		int manifestFD = open(manifestName, O_RDONLY);
@@ -556,10 +714,15 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 			free(head);
 			head = ptr;
 		}
-		
-
+	
 		close(manifestFD);
+
+
+		
 	}
+
+	
+
 
 	return NULL;
 }
@@ -592,7 +755,9 @@ void *updateThread(void *ptr_clientSocket){
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+	
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
@@ -645,7 +810,8 @@ void *currentversionThread(void * ptr_clientSocket){
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
@@ -751,7 +917,8 @@ void *commitThread(void * ptr_clientSocket){
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
@@ -777,15 +944,19 @@ void *commitThread(void * ptr_clientSocket){
 			return NULL;	//then end the thread
 		}
 
-		char *fileNameLen = (char *)malloc(strlen(50) * sizeof(char));
-		char *fileSize = (char *)malloc(strlen(100) * sizeof(char));
-		char *commitFileName = (char *)malloc(atoi(fileNameLen) * sizeof(char));
-		char *commitFileBytes = (char *)malloc(atoi(fileSize) * sizeof(char));
+		char *fileNameLen = (char *)malloc(50 * sizeof(char));
+		char *fileSize = (char *)malloc(100 * sizeof(char));
+		
+		
 
-		strcpy(fileNameLen, readToColon(clientSocket));		
+		strcpy(fileNameLen, readToColon(clientSocket));	
+
+		char *commitFileName = (char *)malloc(atoi(fileNameLen) * sizeof(char));
+		recv(clientSocket, commitFileName, atoi(fileNameLen), 0);	//commitFileName contains the path for the .Commit file
+
 		strcpy(fileSize, readToColon(clientSocket));
 
-		recv(clientSocket, commitFileName, atoi(fileNameLen), 0);	//commitFileName contains the path for the .Commit file
+		char *commitFileBytes = (char *)malloc(atoi(fileSize) * sizeof(char));
 		recv(clientSocket, commitFileBytes, atoi(fileSize), 0);		//commitFileBytes contains the bytes in the .Commit file
 
 		int commitFD = open(commitFileBytes, O_RDWR);
@@ -836,7 +1007,8 @@ void *upgradeThread(void *ptr_clientSocket){
 
 
 	closedir(dir);
-	char *sendFail = "Failed:";
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
 	int senderr;
 
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
@@ -862,7 +1034,7 @@ void *upgradeThread(void *ptr_clientSocket){
 		FIM *ptr = head; 
 		int nameLen;
 		int readerr;
-		for (int i; i < noOfFiles; i++){	//read the files that are needed and put them into the Linked List 
+		for (int i = 0; i < noOfFiles; i++){	//read the files that are needed and put them into the Linked List 
 
 			char *str_nameLen = (char *)malloc(30 * sizeof(char));
 			strcpy(str_nameLen, readToColon(clientSocket));	//get the name length as a string
@@ -889,13 +1061,465 @@ void *upgradeThread(void *ptr_clientSocket){
 		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
 
 		ptr = head;
-		for (int i; i < noOfFiles; i++){
+		for (int i = 0; i < noOfFiles; i++){
 
 			senderr = sendTheFiles(clientSocket, ptr->filePath);   //send the files that were requested
 			ptr = ptr->next;
 		}
 	}
 
+	return NULL;
+}
+
+void *pushThread(void *ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Pushing Changes: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {	//
+
+		char *commitPath = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.Commit")) * sizeof(char));
+		strcpy(commitPath, "./");
+		strcat(commitPath, ProjName);
+		strcat(commitPath, "/.Commit");
+
+		//get file size of .Commit 
+		struct stat forSize;  
+		int filesize;
+		printf("commitPath = %s\n", commitPath);
+		if (stat(commitPath, &forSize) == 0) {
+        	filesize = (int)forSize.st_size;
+		}
+    	else {
+			printf("Size could not be found\n");
+        	senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+		}
+
+		//get the bytes from the file into a string 
+		char *charsInCommit = (char *)malloc((1 + filesize) * sizeof(char));
+
+		int commitFD = open(commitPath, O_RDONLY);
+		if (commitFD < 0){
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			return NULL;
+		}
+
+		int readerr = read(commitFD, charsInCommit, filesize);	// get the bytes in the file 
+		close(commitFD);
+
+
+		char *readsucc = (char *)malloc(strlen("sendfile:1:") * sizeof(char));
+		readerr = read(clientSocket, readsucc, strlen("sendfile:1:")); //get the clients commit file 
+		if (strstr(readsucc, "Failed") != NULL){
+			return NULL;
+		}
+
+		char *commitnameLen = (char *)malloc(50 * sizeof(char)); // read the length of commit path 
+		strcpy(commitnameLen, readToColon(clientSocket));
+
+		char *commitfileName = (char *)malloc((strlen(":") + strlen(commitPath)) * sizeof(char)); // get commit path
+		readerr = read(clientSocket, commitfileName, (1 + atoi(commitnameLen)));
+
+		char *lenOfCommit = (char *)malloc(60 * sizeof(char));
+		strcpy(lenOfCommit, readToColon(clientSocket));
+
+		char *clientCommit = (char *)malloc(atoi(lenOfCommit) * sizeof(char));
+		readerr = read(clientSocket, clientCommit, atoi(lenOfCommit));
+
+		char *colon = (char *)malloc(strlen(":") * sizeof(char));
+		readerr = read(clientSocket, colon, strlen(":"));
+
+
+		if (strstr(charsInCommit, clientCommit) == NULL){	// check if the client commit exists in the commit file in the server 
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);//if it doesn't report a fail 
+			return NULL;
+		}
+
+		char *manifestName = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.Manifest") )*sizeof(char));	
+		strcpy(manifestName, "./");
+		strcat(manifestName, ProjName);
+		strcat(manifestName, "/.Manifest");
+
+		
+		////////////////////////////////////////////////should tar the project here and store it 
+		//"tar czvf ./testProject.1.tar.gz ./testProject"
+		int tarfd = open(manifestName, O_RDONLY);
+		int oldV = getProjectVersion(tarfd);
+		char *oldVersion = (char *)malloc(30 * sizeof(char));
+		sprintf(oldVersion, "%d", oldV);
+
+		char *sysCommand = (char *)malloc((strlen("tar czvf ./") + strlen(ProjName) + strlen(".") + strlen(oldVersion) + strlen(".tar.gz ") + strlen("./") + strlen(ProjName)) * sizeof(char));
+		strcpy(sysCommand, "tar czvf ./");
+		strcat(sysCommand, ProjName);
+		strcat(sysCommand, ".");
+		strcat(sysCommand, oldVersion);
+		strcat(sysCommand, ".tar.gz ");
+		strcat(sysCommand, "./");
+		strcat(sysCommand, ProjName);
+		system(sysCommand); 	//tars the project with the name "project.version.tar.gz"
+
+
+		readerr = read(clientSocket, readsucc, strlen("sendfile:1:")); //get the clients commit file 
+		if (strstr(readsucc, "Failed") != NULL){
+			return NULL;
+		}
+
+
+		
+
+
+		int spaceCount = 0;
+		char *version;
+		int vIndex = 0;
+		char *filePaths;
+		char *hashcode;
+		int fd;
+		int writeErr;
+		char *flag = (char *)malloc(strlen("A") * sizeof(char));
+		for (int i = 0; i < strlen(clientCommit); i++){ 
+		//go through the client's commit file and see what file you need and what you have to do with them 
+			
+			if (spaceCount == 0){ // get the command for the line 
+				if (clientCommit[i] == ' '){
+					spaceCount++; 
+					continue;
+				}
+				else {
+					flag[0] = clientCommit[i];
+				}
+			}
+			else if (spaceCount == 1){ //get the version number
+				if (clientCommit[i] == ' '){
+					spaceCount++; 
+					vIndex = 0;
+					continue;
+				}
+				else {
+					version[vIndex] = (char)malloc(sizeof(char));
+					version[vIndex] = clientCommit[i];
+					vIndex++;
+				}
+			}
+			else if (spaceCount == 2){ //get the filepath 
+				if (clientCommit[i] == 0){
+					spaceCount++; 
+					vIndex = 0;
+					continue;
+				}
+				else {
+					filePaths[vIndex] = (char)malloc(sizeof(char));
+					filePaths[vIndex] = clientCommit[i];
+					vIndex++;
+				}
+			}
+			else if (spaceCount == 3){//get the hashcode 
+				if (clientCommit[i] == '\n'){ //use the information gathered to create the files needed and change the .Manifest
+					spaceCount = 0;
+					vIndex = 0;
+
+					if (flag[0] == 'A'){
+						char *byteLen = (char *)malloc(sizeof(char));
+						strcpy(byteLen, readToColon(clientSocket));
+						char *fileContents = (char *)malloc(atoi(byteLen) * sizeof(char));
+						readerr = read(clientSocket, fileContents, atoi(byteLen));
+						readerr = read(clientSocket, colon, strlen(colon));
+						fd = creat(filePaths, O_RDWR);
+						writeErr = write(fd, fileContents, strlen(fileContents));
+						close(fd);
+						free(byteLen);
+						free(fileContents);
+						//change the manifest***
+						fd = open(manifestName, O_RDWR);
+						writeErr = lseek(fd, 0, SEEK_END);
+						writeErr = write(fd, version, strlen(version));
+						writeErr = write(fd, " ", strlen(" "));
+						writeErr = write(fd, filePaths, strlen(filePaths));
+						writeErr = write(fd, " ", strlen(" "));
+						writeErr = write(fd, hashcode, strlen(hashcode));
+						writeErr = write(fd, "\n", strlen("\n"));
+						close(fd);
+					}
+					else if (flag[0] == 'M'){
+						char *byteLen = (char *)malloc(sizeof(char));
+						strcpy(byteLen, readToColon(clientSocket));
+						char *fileContents = (char *)malloc(atoi(byteLen) * sizeof(char));
+						readerr = read(clientSocket, fileContents, atoi(byteLen));
+						readerr = read(clientSocket, colon, strlen(colon));
+						fd = creat(filePaths, O_RDWR);
+						writeErr = write(fd, fileContents, strlen(fileContents));
+						close(fd);
+						free(byteLen);
+						free(fileContents);
+						//change the manifest *** 
+						fd = open(manifestName, O_RDWR);
+						removeFromManifest(fd, manifestName, filePaths);//remove the entry from the manifest and add it back in 
+						fd = open(manifestName, O_RDWR);
+						writeErr = lseek(fd, 0, SEEK_END);
+						writeErr = write(fd, version, strlen(version));
+						writeErr = write(fd, " ", strlen(" "));
+						writeErr = write(fd, filePaths, strlen(filePaths));
+						writeErr = write(fd, " ", strlen(" "));
+						writeErr = write(fd, hashcode, strlen(hashcode));
+						writeErr = write(fd, "\n", strlen("\n"));
+						close(fd);
+						
+
+					}
+					else if (flag[0] == 'R'){
+						unlink(filePaths);
+						//change manifest ***
+						fd = open(manifestName, O_RDWR);
+						removeFromManifest(fd, manifestName, filePaths);
+					}
+
+				}
+				else {
+					hashcode[vIndex] = (char)malloc(sizeof(char));
+					hashcode[vIndex] = (char)malloc(sizeof(char));
+					vIndex++;
+				}
+			}
+		}
+
+		///////////////////////////////////////////////////////this is where the history file may be made or edited 
+		char *projectVersion = (char *)malloc(30 * sizeof(char));
+		int manifestFD = open(manifestName, O_RDWR);
+		sprintf(projectVersion, "%d\n", (int)(getProjectVersion(manifestFD) + 1));
+		close(manifestFD);
+		char *historypath = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.History")) *sizeof(char));
+		int hisFD = open(historypath, O_RDWR);
+		if (hisFD < 0){
+			hisFD = creat(historypath, O_RDWR);
+			
+			
+			writeErr = write(hisFD, projectVersion , strlen(projectVersion));
+			writeErr = write(hisFD, charsInCommit, strlen(charsInCommit));
+			writeErr = write(hisFD, "\n", strlen("\n"));
+		}
+		else {
+			writeErr = lseek(hisFD, 0, SEEK_END);
+			writeErr = write(hisFD, "\n", strlen("\n"));
+			writeErr = write(hisFD, projectVersion , strlen(projectVersion));
+			writeErr = write(hisFD, charsInCommit, strlen(charsInCommit));
+			writeErr = write(hisFD, "\n", strlen("\n"));
+
+		}
+
+		//finally change the project version
+		manifestFD = open(manifestName, O_RDWR);
+		writeErr = incrementVNum(manifestFD, manifestName);
+
+		char success[10] = "success:";
+		senderr = send(clientSocket, success, strlen(success), 0);
+	}
+
+	return NULL;
+}
+
+void *historyThread(void *ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Commit for: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else { 
+		char *historyName = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.History")) * sizeof(char));
+		strcpy(historyName, "./");
+		strcat(historyName, ProjName);
+		strcat(historyName, "/.History");
+
+		int fd = open(historyName, O_RDONLY);
+
+		if (fd < 0){ //if the .History file does not exist
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			return NULL;
+		}
+		
+
+		struct stat forSize;  
+		int filesize;
+		printf("fileName = %s\n", historyName);
+ 	  	if (stat(historyName, &forSize) == 0) {
+   	    	filesize = (int)forSize.st_size;
+		}
+    	else {
+			printf("Size could not be found\n");
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+       		return NULL;
+		}
+		char *historyContents = (char *)malloc(filesize * sizeof(char));
+		int eof = read(fd, historyContents, filesize);
+
+
+		char *sizeOfHistory = (char *)malloc(50 * sizeof(char));
+		sprintf(sizeOfHistory, "%d:", (int)filesize);
+		char *sendHis = (char *)malloc((strlen(sizeOfHistory) + strlen("history:")) * sizeof(char));
+		strcpy(sendHis, "history:");
+		strcat(sendHis, sizeOfHistory);
+		senderr = send(clientSocket, sendHis, strlen(sendHis), 0);
+		senderr = send(clientSocket, historyContents, strlen(historyContents), 0);
+		senderr = send(clientSocket, ":", strlen(":"), 0);
+	}
+
+	return NULL;
+}
+
+void *rollbackThread(void *ptr_clientSocket){
+	int clientSocket = *((int *)ptr_clientSocket);
+	free(ptr_clientSocket);
+
+	int projFound = 0;
+
+	char *ProjName = (char *)malloc(300 * sizeof(char));
+	strcpy(ProjName, readToColon(clientSocket));
+
+	printf("Commit for: ./%s\n", ProjName);
+
+	struct dirent *dirPtr;
+	DIR *dir = opendir("./");
+	if (dir == NULL){
+		printf("Cannot open Current Working Directory\n");
+		return NULL;
+	}
+
+
+	while ((dirPtr = readdir(dir)) != NULL){	// checks for the project in the current directory
+		if(strcmp(dirPtr->d_name, ProjName) == 0){
+			projFound = 1;	// logs that the project is in the directory
+			break;
+		}
+	}
+
+
+	closedir(dir);
+	char *sendFail = (char *)malloc(strlen("Failed:") * sizeof(char));
+	sendFail = "Failed:";
+	int senderr;
+
+	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
+		printf("%s does not exist\n", ProjName);
+		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+	}
+	else {
+		char *version = (char *)malloc(30 * sizeof(char));
+		char *readSucc = (char *)malloc(strlen("version:") * sizeof(char));
+
+		strcpy(readSucc, readToColon(clientSocket));
+		strcpy(version, readToColon(clientSocket)); // version of the project to untar 
+
+		//get the currentversion number so you can delete all numbers in between 
+		char *manifestName = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.Manifest")) * sizeof(char));
+		char *forDestroy = (char *)malloc((strlen("./") + strlen(ProjName)) * sizeof(char));
+		strcpy(manifestName, "./");
+		strcat(manifestName, ProjName);
+		strcpy(forDestroy, manifestName); //./ProjectName
+		strcat(manifestName, "/.Manifest");
+
+		int fd = open(manifestName, O_RDONLY);
+		int currentV = getProjectVersion(fd); //get the current version
+		if (currentV == 0){
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			return NULL;
+		}
+		destroyDirectory(forDestroy);	//then delete the existing project
+
+		//use the system call "tar xvzf ./testProject.1.tar.gz" to unpack the tar file
+		char *sysCommand = (char *)malloc((strlen("tar xvzf ") + strlen("./") + strlen(ProjName) + strlen(".") + strlen(version) + strlen(".tar.gz")) * sizeof(char)); //holds the name of the project.tar.gz
+		strcpy(sysCommand,"tar xvzf ");
+		strcat(sysCommand, "./");
+		strcat(sysCommand, ProjName);
+		strcat(sysCommand, ".");
+		strcat(sysCommand, version);
+		strcat(sysCommand, ".tar.gz");
+		system(sysCommand);
+		
+		//now delete all tar file between the rolled back version and the original version
+		int rollVersion = atoi(version);
+		currentV--;
+		char *str_currentV = (char *)malloc(30 * sizeof(char));
+		sprintf(str_currentV, "%d", currentV);
+		
+		while (currentV > rollVersion){ //deletes all tar files between the rolled back version and the original version
+			char *tempV = (char *)malloc(strlen(str_currentV) * sizeof(char));
+			sprintf(tempV, "%d", currentV);
+			
+			char *tarToDelete = (char *)malloc((strlen(forDestroy) + strlen(".") + strlen(tempV) + strlen(".tar.gz")) * sizeof(char));
+			strcpy(tarToDelete, forDestroy);
+			strcat(tarToDelete, ".");
+			strcat(tarToDelete, tempV);
+			strcat(tarToDelete, ".tar.gz");
+			unlink(tarToDelete);
+
+			free(tarToDelete);
+			free(tempV);
+			currentV--;
+		}
+
+		char *sendsucc = (char *)malloc(strlen("success:") * sizeof(char));
+		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
+		
+	}
 
 
 	return NULL;
@@ -1020,6 +1644,11 @@ int main(int argc, char *argv[]){
 		}
 		else if (strcmp(command, "push") == 0){
 			
+			pthread_t pushT;
+			int *pushClient = (int *)malloc(sizeof(int));
+			*pushClient = ClientSocketfd;
+			pthread_create(&pushT, NULL, pushThread, pushClient);
+
 		}
 		else if (strcmp(command, "create") == 0){	//calls the create function
 
@@ -1034,6 +1663,7 @@ int main(int argc, char *argv[]){
 			int *destroyClient = (int *)malloc(sizeof(int));
 			*destroyClient = ClientSocketfd;
 			pthread_create(&destroyT, NULL, destroyThread, destroyClient);
+
 		}
 		else if (strcmp(command, "currentversion") == 0){
 
@@ -1045,8 +1675,18 @@ int main(int argc, char *argv[]){
 		}
 		else if (strcmp(command, "history") == 0){
 
+			pthread_t historyT;
+			int *historyClient = (int *)malloc(sizeof(int));
+			*historyClient = ClientSocketfd;
+			pthread_create(&historyT, NULL, historyThread, historyClient);
+
 		}
 		else if (strcmp(command, "rollback") == 0){
+
+			pthread_t rollbackT;
+			int *rollbackClient = (int *)malloc(sizeof(int));
+			*rollbackClient = ClientSocketfd;
+			pthread_create(&rollbackT, NULL, rollbackThread, rollbackClient);
 
 		}
 		else {	//an incorrect command was sent, so print to server and send error to client... will most likely never happen
