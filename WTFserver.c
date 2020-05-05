@@ -508,7 +508,7 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		senderr = write(manifest, versionNo, strlen(versionNo));
 
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
-		char *sendSF = (char *)malloc("strlen(sendfile:1:") * sizeof(char));
+		char *sendSF = (char *)malloc(strlen("sendfile:1:") * sizeof(char));
 		strcpy(sendSF,"sendfile:1:");
 		senderr = send(clientSocket, sendSF, strlen(sendSF), 0);
 		
