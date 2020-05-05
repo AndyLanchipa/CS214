@@ -1227,7 +1227,7 @@ void *pushThread(void *ptr_clientSocket){
 					continue;
 				}
 				else {
-					version[vIndex] = (char)malloc(sizeof(char));
+					version[vIndex] = *(char *)malloc(sizeof(char));
 					version[vIndex] = clientCommit[i];
 					vIndex++;
 				}
@@ -1239,7 +1239,7 @@ void *pushThread(void *ptr_clientSocket){
 					continue;
 				}
 				else {
-					filePaths[vIndex] = (char)malloc(sizeof(char));
+					filePaths[vIndex] = *(char *)malloc(sizeof(char));
 					filePaths[vIndex] = clientCommit[i];
 					vIndex++;
 				}
@@ -1306,8 +1306,8 @@ void *pushThread(void *ptr_clientSocket){
 
 				}
 				else {
-					hashcode[vIndex] = (char)malloc(sizeof(char));
-					hashcode[vIndex] = (char)malloc(sizeof(char));
+					hashcode[vIndex] = *(char *)malloc(sizeof(char));
+					hashcode[vIndex] = clientCommit[i];
 					vIndex++;
 				}
 			}
