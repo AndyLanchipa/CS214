@@ -502,7 +502,8 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 			printf(".Manifest file could not be created\n");
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
 		}
-		char *versionNo = "0\n";
+		char *versionNo = (char *)malloc(strlen("0\n") * sizeof(char));
+		strcpy(versionNo, "0\n");
 		senderr = write(manifest, versionNo, strlen(versionNo));
 
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
