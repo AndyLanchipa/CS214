@@ -261,7 +261,8 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 	strcpy(fileNamec, fileName);
 	strcat(fileNamec, ":");
 
-	char *sendColon = ":";	//send buffer for :
+	char *sendColon = (char *)malloc(strlen(":") * sizeof(char));
+	strcpy(sendColon, ":");	//send buffer for :
 
 	char *sendFilePathLen = (char *)malloc((1 + strlen(fileName)) * sizeof(char));
 	sprintf(sendFilePathLen, "%d", (int)strlen(fileName)); //send buffer for the file path 
@@ -507,9 +508,10 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		senderr = write(manifest, versionNo, strlen(versionNo));
 
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
-		char *sendSF = "sendfile:1:";
+		char *sendSF = (char *)malloc("strlen(sendfile:1:") * sizeof(char));
+		strcpy(sendSF,"sendfile:1:");
 		senderr = send(clientSocket, sendSF, strlen(sendSF), 0);
-		printf("projectPath = %s\n\n", projectPath);
+		
 		senderr = sendTheFiles(clientSocket, projectPath);
 		
 
@@ -568,7 +570,6 @@ void destroyDirectory(char *projName){
 
 	
 }
-
 
 
 void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy function call from client
