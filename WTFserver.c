@@ -246,7 +246,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 
 	struct stat forSize;  
 	int filesize;
-	printf("fileName = %s\n", fileName);
+	printf("fileName = %sd\n", fileName);
     if (stat(fileName, &forSize) == 0) {
         filesize = (int)forSize.st_size;
 	}
@@ -254,7 +254,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 		printf("Size could not be found\n");
         return -1;
 	}
-
+	
 
 
 	char *fileNamec = (char *)malloc((1 + strlen(fileName)) * sizeof(char));
@@ -268,9 +268,14 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 	sprintf(sendFilePathLen, "%d", (int)strlen(fileName)); //send buffer for the file path 
 	strcat(sendFilePathLen, sendColon);
 
-	char *charsInFile = (char *)malloc((1 + forSize.st_size) * sizeof(char));
-	strcpy(charsInFile, getFileChars(fileName, forSize.st_size));	//stores send buffer to send the bytes in the file
+	char *charsInFile = (char *)malloc((1 + filesize) * sizeof(char));
+	int fd = open(fileName, O_RDONLY);
+
+	int eof = read(fd, charsInFile, filesize);
+//	strcpy(charsInFile, getFileChars(fileName, filesize));	//stores send buffer to send the bytes in the file
 	strcat(charsInFile, sendColon);
+	printf("filesize = %d\ncharsInFile = %s\n",filesize, charsInFile);
+	close(fd);
 
 	char *sendFilecontentsLen = (char *)malloc((1 + strlen(charsInFile)) * sizeof(char));	
 	sprintf(sendFilecontentsLen, "%d", filesize);	//send buffer for # of chars in file
@@ -357,7 +362,7 @@ int incrementVNum(int fd, char *manifestpath){
 	}
 	close(fd);
 	
-	int newfd = open(manifestpath, O_RDWR);
+	int newfd = open(manifestpath, S_IRWXU);
 	char *charsInManifest = (char *)malloc(filesize * sizeof(char));
 	eof = read(newfd, charsInManifest, filesize);
 	close(newfd);
@@ -369,7 +374,7 @@ int incrementVNum(int fd, char *manifestpath){
 	strcpy(newManifest, version);
 	strcat(newManifest, temp);
 
-	newfd = creat(manifestpath, O_RDWR);
+	newfd = creat(manifestpath, S_IRWXU);
 	int writeErr = write(newfd, newManifest, strlen(newManifest));
 	close(newfd);
 
@@ -436,7 +441,7 @@ int removeFromManifest(int fd, char *manifestpath, char *filePath){
 		strcat(firstPart, secondPart);
 	}
 
-	int newfd = creat(manifestpath, O_RDWR);
+	int newfd = creat(manifestpath, S_IRWXU);
 	int writeErr = write(newfd, firstPart, strlen(firstPart));
 	close(newfd);
 
@@ -498,20 +503,22 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		}
 
 		strcat(projectPath, "/.Manifest");
-		int manifest = creat(projectPath, O_RDWR);	//create the .Manifest file for the project
+
+		int manifest = creat(projectPath, S_IRWXU);	//create the .Manifest file for the project
 		if (manifest < 0){
 			printf(".Manifest file could not be created\n");
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
 		}
-		char *versionNo = (char *)malloc(strlen("0\n") * sizeof(char));
+		char *versionNo = (char *)malloc((1 +strlen("0\n")) * sizeof(char));
 		strcpy(versionNo, "0\n");
+		printf("versionNo = %s\n", versionNo);
 		senderr = write(manifest, versionNo, strlen(versionNo));
+		close(manifest);
 
 		////send file in  format: sendFile:(number of Files):(length of filename):(filename):
 		char *sendSF = (char *)malloc(strlen("sendfile:1:") * sizeof(char));
 		strcpy(sendSF,"sendfile:1:");
 		senderr = send(clientSocket, sendSF, strlen(sendSF), 0);
-		
 		senderr = sendTheFiles(clientSocket, projectPath);
 		
 
@@ -678,7 +685,7 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 		strcat(manifestName, "/.Manifest");
 
 		printf("manifest path = %s\n", manifestName);
-		int manifestFD = open(manifestName, O_RDONLY);
+		int manifestFD = open(manifestName, S_IRWXU);
 		//check if manifest file can be opened... if not then something went wrong because there is no manifest file
 		printf("manifest path = %s\n", manifestName);
 
@@ -962,10 +969,10 @@ void *commitThread(void * ptr_clientSocket){
 		char *commitFileBytes = (char *)malloc(atoi(fileSize) * sizeof(char));
 		recv(clientSocket, commitFileBytes, atoi(fileSize), 0);		//commitFileBytes contains the bytes in the .Commit file
 
-		int commitFD = open(commitFileBytes, O_RDWR);
+		int commitFD = open(commitFileBytes, S_IRWXU);
 		int writeErr;
 		if (commitFD < 0) {
-			commitFD = creat(commitFileName, O_RDWR);//*************figure out how to lock projects 
+			commitFD = creat(commitFileName, S_IRWXU);//*************figure out how to lock projects 
 
 			writeErr = write(commitFD, commitFileBytes, atoi(fileSize));
 		}
@@ -1257,13 +1264,13 @@ void *pushThread(void *ptr_clientSocket){
 						char *fileContents = (char *)malloc(atoi(byteLen) * sizeof(char));
 						readerr = read(clientSocket, fileContents, atoi(byteLen));
 						readerr = read(clientSocket, colon, strlen(colon));
-						fd = creat(filePaths, O_RDWR);
+						fd = creat(filePaths, S_IRWXU);
 						writeErr = write(fd, fileContents, strlen(fileContents));
 						close(fd);
 						free(byteLen);
 						free(fileContents);
 						//change the manifest***
-						fd = open(manifestName, O_RDWR);
+						fd = open(manifestName, S_IRWXU);
 						writeErr = lseek(fd, 0, SEEK_END);
 						writeErr = write(fd, version, strlen(version));
 						writeErr = write(fd, " ", strlen(" "));
@@ -1279,15 +1286,15 @@ void *pushThread(void *ptr_clientSocket){
 						char *fileContents = (char *)malloc(atoi(byteLen) * sizeof(char));
 						readerr = read(clientSocket, fileContents, atoi(byteLen));
 						readerr = read(clientSocket, colon, strlen(colon));
-						fd = creat(filePaths, O_RDWR);
+						fd = creat(filePaths, S_IRWXU);
 						writeErr = write(fd, fileContents, strlen(fileContents));
 						close(fd);
 						free(byteLen);
 						free(fileContents);
 						//change the manifest *** 
-						fd = open(manifestName, O_RDWR);
+						fd = open(manifestName, S_IRWXU);
 						removeFromManifest(fd, manifestName, filePaths);//remove the entry from the manifest and add it back in 
-						fd = open(manifestName, O_RDWR);
+						fd = open(manifestName, S_IRWXU);
 						writeErr = lseek(fd, 0, SEEK_END);
 						writeErr = write(fd, version, strlen(version));
 						writeErr = write(fd, " ", strlen(" "));
@@ -1302,7 +1309,7 @@ void *pushThread(void *ptr_clientSocket){
 					else if (flag[0] == 'R'){
 						unlink(filePaths);
 						//change manifest ***
-						fd = open(manifestName, O_RDWR);
+						fd = open(manifestName, S_IRWXU);
 						removeFromManifest(fd, manifestName, filePaths);
 					}
 
@@ -1317,13 +1324,13 @@ void *pushThread(void *ptr_clientSocket){
 
 		///////////////////////////////////////////////////////this is where the history file may be made or edited 
 		char *projectVersion = (char *)malloc(30 * sizeof(char));
-		int manifestFD = open(manifestName, O_RDWR);
+		int manifestFD = open(manifestName, S_IRWXU);
 		sprintf(projectVersion, "%d\n", (int)(getProjectVersion(manifestFD) + 1));
 		close(manifestFD);
 		char *historypath = (char *)malloc((strlen("./") + strlen(ProjName) + strlen("/.History")) *sizeof(char));
-		int hisFD = open(historypath, O_RDWR);
+		int hisFD = open(historypath, S_IRWXU);
 		if (hisFD < 0){
-			hisFD = creat(historypath, O_RDWR);
+			hisFD = creat(historypath, S_IRWXU);
 			
 			
 			writeErr = write(hisFD, projectVersion , strlen(projectVersion));
@@ -1340,7 +1347,7 @@ void *pushThread(void *ptr_clientSocket){
 		}
 
 		//finally change the project version
-		manifestFD = open(manifestName, O_RDWR);
+		manifestFD = open(manifestName, S_IRWXU);
 		writeErr = incrementVNum(manifestFD, manifestName);
 
 		char success[10] = "success:";
