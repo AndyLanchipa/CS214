@@ -200,6 +200,27 @@ FIM *manifestVandPLL(int fd){	//get the versions and the filepaths into a linked
 	return head; 
 }
 
+void makePath(char *filePath){
+	char *dirPath = (char *)malloc(strlen(filePath) * sizeof(char));
+	int dashCount = 0;
+	for (int i = 0; i < strlen(filePath); i++){
+		
+		
+
+		if (filePath[i] == '/'){
+			dashCount++;
+			if (dashCount > 2){
+				mkdir(dirPath, 0777);
+			}
+		}
+		dirPath[i] = filePath[i];
+
+	}
+
+
+
+}
+
 char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
 
 	char *readBuffer = NULL; 
@@ -272,7 +293,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 	int fd = open(fileName, O_RDONLY);
 
 	int eof = read(fd, charsInFile, filesize);
-//	strcpy(charsInFile, getFileChars(fileName, filesize));	//stores send buffer to send the bytes in the file
+	//	strcpy(charsInFile, getFileChars(fileName, filesize));	//stores send buffer to send the bytes in the file
 	strcat(charsInFile, sendColon);
 	printf("filesize = %d\ncharsInFile = %s\n",filesize, charsInFile);
 	close(fd);
@@ -1264,6 +1285,7 @@ void *pushThread(void *ptr_clientSocket){
 						char *fileContents = (char *)malloc(atoi(byteLen) * sizeof(char));
 						readerr = read(clientSocket, fileContents, atoi(byteLen));
 						readerr = read(clientSocket, colon, strlen(colon));
+						makePath(filePaths);
 						fd = creat(filePaths, S_IRWXU);
 						writeErr = write(fd, fileContents, strlen(fileContents));
 						close(fd);
@@ -1331,7 +1353,6 @@ void *pushThread(void *ptr_clientSocket){
 		int hisFD = open(historypath, S_IRWXU);
 		if (hisFD < 0){
 			hisFD = creat(historypath, S_IRWXU);
-			
 			
 			writeErr = write(hisFD, projectVersion , strlen(projectVersion));
 			writeErr = write(hisFD, charsInCommit, strlen(charsInCommit));
