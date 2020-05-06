@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <errno.h>
 pthread_mutex_t lock;
 
 typedef struct filesInManifest {	//used to make a linked list of files in the .Manifest file
@@ -169,10 +170,10 @@ FIM *manifestVandPLL(int fd){	//get the versions and the filepaths into a linked
 				if (head == NULL){
 					head = FIMconstructor(currentWord);
 					currentvWord[strlen(currentvWord)-1] = '\0';
-					printf("currentvWord = %sd\n", currentvWord);
+					
 					head->version = (char *)malloc(strlen(currentvWord) * sizeof(char));
 					strcpy(head->version, currentvWord);
-					printf("ptr->version == %s\n", head->version);
+					
 					ptr = head;
 					currentWord = NULL;
 					currentvWord = NULL;
@@ -180,10 +181,10 @@ FIM *manifestVandPLL(int fd){	//get the versions and the filepaths into a linked
 				else {
 					ptr->next = FIMconstructor(currentWord);
 					currentvWord[strlen(currentvWord)-1] = '\0';
-					printf("currentvWord = %sd\n", currentvWord);
+					
 					ptr->next->version = (char *)malloc(strlen(currentvWord) * sizeof(char));
 					strcpy(ptr->next->version, currentvWord);
-					printf("ptr->version == %s\n", ptr->version);
+					
 					ptr = ptr->next;
 					currentWord = NULL;
 					currentvWord = NULL;
@@ -210,15 +211,20 @@ void makePath(char *filePath){
 		if (filePath[i] == '/'){
 			dashCount++;
 			if (dashCount > 2){
-				mkdir(dirPath, 0777);
+
+			int dir_result  = mkdir(dirPath, 0777);
+				
+	if(dir_result != 0 ){
+		  //errors here  
+
+		  printf("Directory already exists!\n");
+			}
+			
 			}
 		}
 		dirPath[i] = filePath[i];
 
 	}
-
-
-
 }
 
 char *readToColon(int clientSocket){	//reads from socket until a colon is encountered
@@ -267,7 +273,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 
 	struct stat forSize;  
 	int filesize;
-	printf("fileName = %sd\n", fileName);
+	
     if (stat(fileName, &forSize) == 0) {
         filesize = (int)forSize.st_size;
 	}
@@ -295,7 +301,7 @@ int sendTheFiles(int clientFD, char *fileName){	//used to send one file into the
 	int eof = read(fd, charsInFile, filesize);
 	//	strcpy(charsInFile, getFileChars(fileName, filesize));	//stores send buffer to send the bytes in the file
 	strcat(charsInFile, sendColon);
-	printf("filesize = %d\ncharsInFile = %s\n",filesize, charsInFile);
+	
 	close(fd);
 
 	char *sendFilecontentsLen = (char *)malloc((1 + strlen(charsInFile)) * sizeof(char));	
@@ -407,7 +413,7 @@ int removeFromManifest(int fd, char *manifestpath, char *filePath){
 	//get file size of .Commit 
 	struct stat forSize;  
 	int filesize;
-	printf("commitPath = %s\n", manifestpath);
+	
 	if (stat(manifestpath, &forSize) == 0) {
        	filesize = (int)forSize.st_size;
 	}
@@ -532,7 +538,7 @@ void *createThread(void *ptr_clientSocket){	//thread used to handle a create fun
 		}
 		char *versionNo = (char *)malloc((1 +strlen("0\n")) * sizeof(char));
 		strcpy(versionNo, "0\n");
-		printf("versionNo = %s\n", versionNo);
+		
 		senderr = write(manifest, versionNo, strlen(versionNo));
 		close(manifest);
 
@@ -601,6 +607,7 @@ void destroyDirectory(char *projName){
 
 
 void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy function call from client
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -653,13 +660,14 @@ void *destroyThread(void *ptr_clientSocket){	//thread used to handle the destroy
 
 
 	
-	
+	pthread_mutex_unlock(&lock);
 
 	return NULL;
 }
 
 
 void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checkout function call from client
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -674,6 +682,7 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 	DIR *dir = opendir("./");
 	if (dir == NULL){
 		printf("Cannot open Current Working Directory\n");
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
 
@@ -695,6 +704,7 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 	if (projFound == 0){	//if project is in the directory, then send an error since the project already exists
 		printf("%s does not exist\n", ProjName);
 		senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+		
 	}
 	else {
 		printf("project exists\n");
@@ -705,10 +715,10 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 		strcat(manifestName, ProjName);
 		strcat(manifestName, "/.Manifest");
 
-		printf("manifest path = %s\n", manifestName);
+		
 		int manifestFD = open(manifestName, S_IRWXU);
 		//check if manifest file can be opened... if not then something went wrong because there is no manifest file
-		printf("manifest path = %s\n", manifestName);
+		
 
 		FIM *head = NULL;
 		head = manifestPathsLL(manifestFD);
@@ -727,12 +737,12 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 		senderr = send(clientSocket, sendsucc, strlen(sendsucc), 0);
 
 		senderr = sendTheFiles(clientSocket, manifestName);	//send the manifest file
-		printf("manifestName = %s\n", manifestName);
+		
 
 		FIM *ptr = head;
 		
 		while (ptr != NULL){	// send the files 
-			printf("ptr->filePath = %slol\n", ptr->filePath);
+			
 			ptr->filePath[strlen(ptr->filePath)-1] = '\0';
 			senderr = sendTheFiles(clientSocket, ptr->filePath);
 			ptr = ptr->next;
@@ -753,7 +763,7 @@ void *checkoutThread(void *ptr_clientSocket){	//thread used to handle the checko
 	}
 
 	
-
+	pthread_mutex_unlock(&lock);
 
 	return NULL;
 }
@@ -862,7 +872,7 @@ void *currentversionThread(void * ptr_clientSocket){
 
 		int manifestFD = open(manifestName, O_RDONLY);
 		int version = getProjectVersion(manifestFD);	//get the version # of the project
-		printf("version == %d\n", version);
+		
 		close(manifestFD);
 
 		manifestFD = open(manifestName, O_RDONLY);	//get linked list of paths and version numbers
@@ -886,9 +896,9 @@ void *currentversionThread(void * ptr_clientSocket){
 
 		FIM *ptr = head;
 		while (ptr != NULL){	//sends -- (length of filepath):(version):(filepath):
-			printf("ptr->filePath = %slol\n", ptr->filePath);
+			
 			ptr->filePath[strlen(ptr->filePath)-1] = '\0';
-			printf("ptr->filePath = %slol\n", ptr->filePath);
+			
 
 			char *fileNameSize = (char *)malloc((1 + strlen(ptr->filePath)) * sizeof(char));//send the file name size
 			sprintf(fileNameSize, "%d:", (int)strlen(ptr->filePath));
@@ -914,7 +924,7 @@ void *currentversionThread(void * ptr_clientSocket){
 
 
 
-		printLL(head);
+		
 
 	}
 	return NULL;
@@ -1010,7 +1020,7 @@ void *commitThread(void * ptr_clientSocket){
 }
 
 void *upgradeThread(void *ptr_clientSocket){
-
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -1025,6 +1035,7 @@ void *upgradeThread(void *ptr_clientSocket){
 	DIR *dir = opendir("./");
 	if (dir == NULL){
 		printf("Cannot open Current Working Directory\n");
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
 
@@ -1052,6 +1063,7 @@ void *upgradeThread(void *ptr_clientSocket){
 		strcpy(readcommand, readToColon(clientSocket));
 
 		if (strstr(readcommand, "Failed") != NULL){
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 		//if == sendfile: then next readToColon will give number of files needed
@@ -1098,11 +1110,12 @@ void *upgradeThread(void *ptr_clientSocket){
 			ptr = ptr->next;
 		}
 	}
-
+	pthread_mutex_unlock(&lock);
 	return NULL;
 }
 
 void *pushThread(void *ptr_clientSocket){
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -1117,6 +1130,7 @@ void *pushThread(void *ptr_clientSocket){
 	DIR *dir = opendir("./");
 	if (dir == NULL){
 		printf("Cannot open Current Working Directory\n");
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
 
@@ -1148,7 +1162,7 @@ void *pushThread(void *ptr_clientSocket){
 		//get file size of .Commit 
 		struct stat forSize;  
 		int filesize;
-		printf("commitPath = %s\n", commitPath);
+		
 		if (stat(commitPath, &forSize) == 0) {
         	filesize = (int)forSize.st_size;
 		}
@@ -1163,6 +1177,7 @@ void *pushThread(void *ptr_clientSocket){
 		int commitFD = open(commitPath, O_RDONLY);
 		if (commitFD < 0){
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 
@@ -1173,6 +1188,7 @@ void *pushThread(void *ptr_clientSocket){
 		char *readsucc = (char *)malloc(strlen("sendfile:1:") * sizeof(char));
 		readerr = read(clientSocket, readsucc, strlen("sendfile:1:")); //get the clients commit file 
 		if (strstr(readsucc, "Failed") != NULL){
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 
@@ -1194,6 +1210,7 @@ void *pushThread(void *ptr_clientSocket){
 
 		if (strstr(charsInCommit, clientCommit) == NULL){	// check if the client commit exists in the commit file in the server 
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);//if it doesn't report a fail 
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 
@@ -1223,6 +1240,7 @@ void *pushThread(void *ptr_clientSocket){
 
 		readerr = read(clientSocket, readsucc, strlen("sendfile:1:")); //get the clients commit file 
 		if (strstr(readsucc, "Failed") != NULL){
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 
@@ -1374,11 +1392,13 @@ void *pushThread(void *ptr_clientSocket){
 		char success[10] = "success:";
 		senderr = send(clientSocket, success, strlen(success), 0);
 	}
+	pthread_mutex_unlock(&lock);
 
 	return NULL;
 }
 
 void *historyThread(void *ptr_clientSocket){
+	pthread_mutex_lock(&lock);
 	int clientSocket = *((int *)ptr_clientSocket);
 	free(ptr_clientSocket);
 
@@ -1393,6 +1413,7 @@ void *historyThread(void *ptr_clientSocket){
 	DIR *dir = opendir("./");
 	if (dir == NULL){
 		printf("Cannot open Current Working Directory\n");
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
 
@@ -1424,19 +1445,21 @@ void *historyThread(void *ptr_clientSocket){
 
 		if (fd < 0){ //if the .History file does not exist
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			pthread_mutex_unlock(&lock);
 			return NULL;
 		}
 		
 
 		struct stat forSize;  
 		int filesize;
-		printf("fileName = %s\n", historyName);
+		
  	  	if (stat(historyName, &forSize) == 0) {
    	    	filesize = (int)forSize.st_size;
 		}
     	else {
 			printf("Size could not be found\n");
 			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			pthread_mutex_unlock(&lock);
        		return NULL;
 		}
 		char *historyContents = (char *)malloc(filesize * sizeof(char));
@@ -1452,6 +1475,7 @@ void *historyThread(void *ptr_clientSocket){
 		senderr = send(clientSocket, historyContents, strlen(historyContents), 0);
 		senderr = send(clientSocket, ":", strlen(":"), 0);
 	}
+	pthread_mutex_unlock(&lock);
 
 	return NULL;
 }
@@ -1499,6 +1523,11 @@ void *rollbackThread(void *ptr_clientSocket){
 		char *readSucc = (char *)malloc(strlen("version:") * sizeof(char));
 
 		strcpy(readSucc, readToColon(clientSocket));
+		if (strcmp(version, "version") == 0){
+			senderr = send(clientSocket, sendFail, strlen(sendFail), 0);
+			pthread_mutex_unlock(&lock);
+			return NULL;
+		}
 		strcpy(version, readToColon(clientSocket)); // version of the project to untar 
 		
 
@@ -1668,7 +1697,7 @@ int main(int argc, char *argv[]){
 		char *command = (char *)malloc(41 * sizeof(char));
 		strcpy(command, readToColon(ClientSocketfd));	//reads a command sent from client
 
-		printf("commandBuffer = %s\n", command);	//print the command received
+			//print the command received
 
 		if (strcmp(command, "checkout") == 0){
 
